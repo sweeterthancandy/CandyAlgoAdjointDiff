@@ -594,7 +594,12 @@ struct StringCodeGenerator{
                                                 expr->Diff( info->Name() ),
                                                 Symbol::Make(*info->GetDiffLexical(d_symbol)));
 
+                                        #if 0
                                         ss << indent << "// \\partial " << stmt->Name() << " / \\partial " << info->Name() << " d " << info->Name() << "\n";
+                                        #endif
+                                        ss << indent << "/* expr\n";
+                                        sub_diff->Display(ss);
+                                        ss << indent << "*/\n";
                                         ss << indent << "double " << temp_name << " = ";
                                         sub_diff->EmitCode(ss);
                                         ss << ";\n";
