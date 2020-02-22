@@ -146,23 +146,43 @@ struct BinaryOperator : Operator{
                         }
                         case OP_DIV:
                         {
-                                throw std::domain_error("div todo");
+                                return Div(
+                                        Sub(
+                                                Mul(
+                                                        left_->Diff(symbol),
+                                                        right_
+                                                ),
+                                                Mul(
+                                                        left_,
+                                                        right_->Diff(symbol)
+                                                )
+                                        ),
+                                        Pow(
+                                                right_,
+                                                Constant::Make(2.0)
+                                        )
+                                );
+
                         }
                         case OP_POW:
                         {
                                 // lets assume that the exponent is indpedent
                                 // of the deriviative for now
+                                //
+                                // f(x)^C = C * f(x)*(C-1) * f'(x)
+                                // ~ left ^ right
+                                //
                                 return Mul(
-                                        left_,
+                                        right_,
                                         Mul(
                                                 Pow(
-                                                        right_,
+                                                        left_,
                                                         Sub(
-                                                                left_,
+                                                                right_,
                                                                 Constant::Make(1.0)
                                                         )
                                                 ),
-                                                right_->Diff(symbol)
+                                                left_->Diff(symbol)
                                         )
                                 );
                         }
@@ -586,7 +606,106 @@ int main(){
 )";
 }
 
+void black_scholes(){
+
+
+        Function f("black");
+        f.AddArgument("t");
+        f.AddArgument("T");
+        f.AddArgument("r");
+        f.AddArgument("S");
+        f.AddArgument("K");
+        f.AddArgument("vol");
+
+        auto time_to_expiry = BinaryOperator::Sub(
+                Symbol::Make("T"),
+                Symbol::Make("t")
+        );
+
+        auto deno = BinaryOperator::Mul( 
+                Constant::Make(1.0),
+                BinaryOperator::Mul(
+                        Symbol::Make("vol"),
+                        BinaryOperator::Pow(
+                                time_to_expiry,
+                                Constant::Make(0.5)
+                        )
+                )
+        );
+
+        auto d1 = BinaryOperator::Mul(
+                deno,
+                BinaryOperator::Add(
+                        Log::Make(
+                                BinaryOperator::Div(
+                                        Symbol::Make("S"),
+                                        Symbol::Make("K")
+                                )
+                        ),
+                        BinaryOperator::Mul(
+                                BinaryOperator::Add(
+                                        Symbol::Make("r"),
+                                        BinaryOperator::Div(
+                                                BinaryOperator::Pow(
+                                                        Symbol::Make("vol"),
+                                                        Constant::Make(2.0)
+                                                ),
+                                                Constant::Make(2.0)
+                                        )
+                                ),
+                                time_to_expiry
+                        )
+                )
+        );
+
+
+        auto stmt_0 = std::make_shared<Statement>("stmt0", d1);
+
+        f.AddStatement(stmt_0);
+
+        std::ofstream fstr("prog.cxx");
+        fstr << R"(
+#include <cstdio>
+#include <cmath>
+)";
+
+        StringCodeGenerator cg;
+        cg.Emit(fstr, f);
+        fstr << R"(
 
 int main(){
-        example_0();
+        double t   = 0.0;
+        double T   = 10.0;
+        double r   = 0.04;
+        double S   = 50;
+        double K   = 60;
+        double vol = 0.2;
+
+        double epsilon = 1e-10;
+
+        double d_t = 0.0;
+        double d_T = 0.0;
+        double d_r = 0.0;
+        double d_S = 0.0;
+        double d_K = 0.0;
+        double d_vol = 0.0;
+        double value = black( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
+
+        double d1 = 1/ ( vol * std::sqrt(T - t)) *  ( std::log(S/K) + ( r + vol*vol/2)*(T-t));
+
+        double dummy;
+        double lower = black( t - epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
+        double upper = black( t + epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
+        double finite_diff = ( upper - lower ) / epsilon;
+        double residue = d_t - finite_diff;
+
+        printf("%f,%f,%f,%f,%f,%f => %f,%f => %f,%f,%f\n", t, T, r, S, K, vol, value, d1, d_t, finite_diff, residue);
+        
+
+}
+)";
+}
+
+int main(){
+        black_scholes();
 }
