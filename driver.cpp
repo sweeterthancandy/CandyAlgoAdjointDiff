@@ -51,47 +51,70 @@ struct Operator : std::enable_shared_from_this<Operator>{
 
         void Display(std::ostream& ostr = std::cout)const{
 
-                struct EndOfGroup{};
                 using ptr_t = std::shared_ptr<Operator const>;
-                using var_t = boost::variant<
-                        ptr_t ,
-                        EndOfGroup
-                >;
-                std::vector<var_t> stack{var_t{shared_from_this()}};
+                std::vector<std::vector<ptr_t> > stack{{shared_from_this()}};
 
                 auto indent = [&](int extra = 0){
                         return std::string((stack.size()+extra)*2,' ');
                 };
 
-                for(;stack.size();){
-                        auto head = stack.back();
-                        stack.pop_back();
-                        if( auto opt_ptr = boost::get<ptr_t>(&head) ){
-                                auto ptr = *opt_ptr;
+                for(size_t ttl=1000;stack.size() && ttl;--ttl){
 
-                                auto hidden = ptr->HiddenArguments();
-                                if( ptr->IsTerminal() ){
-                                        if( hidden.size() == 0 ){
-                                                ostr << indent() << ptr->Name() << "{}\n";
-                                        } else if( hidden.size() == 1 ){
-                                                ostr << indent() << ptr->Name() << "{" << hidden[0] << "}\n";
-                                        } else {
-                                                ostr << indent() << ptr->Name() << "{\n";
-                                                for(auto const& s : hidden ){
-                                                        ostr << indent(1) << s << "\n";
-                                                }
-                                                ostr << indent() << "}\n";
-                                        }
+                        #if 0
+                        std::cout << "{";
+                        for(size_t j=0;j!=stack.size();++j){
+                                if( j!=0)
+                                        std::cout << ",";
+                                std::cout << stack[j].size();
+                        }
+                        std::cout << "}\n";
+                        #endif
+
+
+
+                        auto& head = stack.back();
+
+                        if( head.empty() ){
+                                stack.pop_back();
+                                if( stack.size() == 0 )
+                                        break;
+                                ostr << indent() << "}\n";
+                                continue;
+                        }
+
+                        auto ptr = head.back();
+                        head.pop_back();
+
+
+
+                        auto hidden = ptr->HiddenArguments();
+                        if( ptr->IsTerminal() ){
+                                #if 1
+                                if( hidden.size() == 0 ){
+                                        ostr << indent() << ptr->Name() << "{}\n";
+                                } else if( hidden.size() == 1 ){
+                                        ostr << indent() << ptr->Name() << "{" << hidden[0] << "}\n";
                                 } else {
                                         ostr << indent() << ptr->Name() << "{\n";
-                                        stack.push_back(EndOfGroup{});
-                                        auto children = ptr->Children();
-                                        for(auto iter = children.rbegin(), end = children.rend();iter!=end;++iter){
-                                                stack.push_back(var_t{*iter});
+                                        for(auto const& s : hidden ){
+                                                ostr << indent(1) << s << "\n";
                                         }
+                                        ostr << indent() << "}\n";
                                 }
-                        } else if( auto ptr = boost::get<ptr_t>(&head)){
-                                ostr << indent() << "}\n";
+                                #endif
+                        } else {
+                                std::cerr << __FILE__ << ":" << __LINE__ << ":A\n"; // __CandyTag__A
+                                ostr << indent() << ptr->Name() << "{\n";
+                                auto children = ptr->Children();
+                                #if 0
+                                std::cout << "stack.size() => " << stack.size() << "\n"; // __CandyPrint__(cxx-print-scalar,stack.size())
+                                stack.emplace_back();
+                                for(auto iter = children.rbegin(), end = children.rend();iter!=end;++iter){
+                                        stack.back().push_back(*iter);
+                                }
+                                std::cout << "stack.size() => " << stack.size() << "\n"; // __CandyPrint__(cxx-print-scalar,stack.size())
+                                #endif
+                                stack.emplace_back(children.rbegin(), children.rend());
                         }
                 }
         }
@@ -138,6 +161,7 @@ struct Symbol : Operator{
                 :Operator{"Symbol"}
                 ,name_(name)
         {}
+        virtual std::vector<std::string> HiddenArguments()const{ return {name_}; }
         #if 0
         virtual double Eval(SymbolTable const& ST)const{
                 return ST.Lookup(name_);
