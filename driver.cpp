@@ -87,6 +87,7 @@ enum BinaryOperatorKind{
         OP_SUB,
         OP_MUL,
         OP_DIV,
+        OP_POW,
 };
 
 struct BinaryOperator : Operator{
@@ -147,25 +148,51 @@ struct BinaryOperator : Operator{
                         {
                                 throw std::domain_error("div todo");
                         }
+                        case OP_POW:
+                        {
+                                // lets assume that the exponent is indpedent
+                                // of the deriviative for now
+                                return Mul(
+                                        left_,
+                                        Mul(
+                                                Pow(
+                                                        right_,
+                                                        Sub(
+                                                                left_,
+                                                                Constant::Make(1.0)
+                                                        )
+                                                ),
+                                                right_->Diff(symbol)
+                                        )
+                                );
+                        }
                 }
         }
 
 
         virtual void EmitCode(std::ostream& ss)const{
-                ss << "(";
-                ss << "(";
-                left_->EmitCode(ss);
-                ss << ")";
-                switch(op_){
-                case OP_ADD: ss << "+"; break;
-                case OP_SUB: ss << "-"; break;
-                case OP_MUL: ss << "*"; break;
-                case OP_DIV: ss << "/"; break;
+                if( op_ == OP_POW ){
+                        ss << "std::pow(";
+                        left_->EmitCode(ss);
+                        ss << ", ";
+                        right_->EmitCode(ss);
+                        ss << ")";
+                } else {
+                        ss << "(";
+                        ss << "(";
+                        left_->EmitCode(ss);
+                        ss << ")";
+                        switch(op_){
+                        case OP_ADD: ss << "+"; break;
+                        case OP_SUB: ss << "-"; break;
+                        case OP_MUL: ss << "*"; break;
+                        case OP_DIV: ss << "/"; break;
+                        }
+                        ss << "(";
+                        right_->EmitCode(ss);
+                        ss << ")";
+                        ss << ")";
                 }
-                ss << "(";
-                right_->EmitCode(ss);
-                ss << ")";
-                ss << ")";
         }
 
 
@@ -188,6 +215,11 @@ struct BinaryOperator : Operator{
                                              std::shared_ptr<Operator> const& right)
         {
                 return std::make_shared<BinaryOperator>(OP_DIV, left, right);
+        }
+        static std::shared_ptr<Operator> Pow(std::shared_ptr<Operator> const& left,
+                                             std::shared_ptr<Operator> const& right)
+        {
+                return std::make_shared<BinaryOperator>(OP_POW, left, right);
         }
 
 private:
@@ -238,6 +270,7 @@ private:
         std::shared_ptr<Operator> arg_;
 };
 
+
 // normal distribution CFS
 struct Phi : Operator{
         Phi(std::shared_ptr<Operator> arg)
@@ -245,6 +278,7 @@ struct Phi : Operator{
         {}
         #if 0
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
+                // f(x) = 1/\sqrt{2 \pi} \exp{-\frac{1}{2}x^2}
         }
         #endif
         virtual void EmitCode(std::ostream& ss)const{
@@ -440,7 +474,8 @@ void example_0(){
         f.AddArgument("x");
         f.AddArgument("y");
 
-        auto expr_0 = BinaryOperator::Mul(Log::Make(BinaryOperator::Mul(Symbol::Make("x"),Symbol::Make("x"))),  Exp::Make(Symbol::Make("y")));
+        //auto expr_0 = BinaryOperator::Mul(Log::Make(BinaryOperator::Mul(Symbol::Make("x"),Symbol::Make("x"))),  Exp::Make(Symbol::Make("y")));
+        auto expr_0 = BinaryOperator::Pow(Symbol::Make("x"), Constant::Make(2));
 
         auto stmt_0 = std::make_shared<Statement>("stmt0", expr_0);
 
