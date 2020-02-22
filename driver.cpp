@@ -714,6 +714,11 @@ struct StringCodeGenerator{
 
                                         sub_diff = folder.Fold(sub_diff);
 
+                                        if( sub_diff->Kind() == OPKind_Constant  ){
+                                                auto constant = reinterpret_cast<Constant*>(sub_diff.get());
+                                                if( constant->Value() == 0.0 )
+                                                        continue;
+                                        }
 
 
                                         #if 0
@@ -737,10 +742,14 @@ struct StringCodeGenerator{
 
 
                                 ss << indent << "double " << token << " = ";
-                                for(size_t idx=0;idx!=subs.size();++idx){
-                                        if( idx != 0 )
-                                                ss << " + ";
-                                        ss << subs[idx];
+                                if( subs.size() ){
+                                        for(size_t idx=0;idx!=subs.size();++idx){
+                                                if( idx != 0 )
+                                                        ss << " + ";
+                                                ss << subs[idx];
+                                        }
+                                } else {
+                                        ss << "0.0";
                                 }
                                 ss << ";\n";
                         }
