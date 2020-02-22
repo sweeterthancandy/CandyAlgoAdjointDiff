@@ -497,6 +497,7 @@ private:
 };
 
 
+
 struct StringCodeGenerator{
         void Emit(std::ostream& ss, Function const& f)const{
 
@@ -508,18 +509,19 @@ struct StringCodeGenerator{
                                 : name_{name}
                         {}
                         std::string const& Name()const{ return name_; }
-                        boost::optional<std::string const&> GetDiffLexical(std::string const& symbol)const{
+                        boost::optional<std::shared_ptr<Operator> > GetDiffLexical(std::string const& symbol)const{
                                 auto iter = diff_map_.find(symbol);
                                 if( iter == diff_map_.end() )
                                         return {};
                                 return iter->second;
                         }
-                        void MapDiff(std::string const& symbol, std::string const& name){
-                                diff_map_[symbol] = name;
+                        void MapDiff(std::string const& symbol,
+                                    std::shared_ptr<Operator> const& value){
+                                diff_map_[symbol] = value;
                         }
                 private:
                         std::string name_;
-                        std::unordered_map<std::string, std::string> diff_map_;
+                        std::unordered_map<std::string, std::shared_ptr<Operator> > diff_map_;
                 };
 
 
@@ -531,9 +533,9 @@ struct StringCodeGenerator{
                         auto ptr = std::make_shared<VariableInfo>(arg);
                         for( auto const& inner_arg : to_diff ){
                                 if( arg == inner_arg ){
-                                        ptr->MapDiff(inner_arg, "1.0");
+                                        ptr->MapDiff(inner_arg, Constant::Make(1.0));
                                 } else {
-                                        ptr->MapDiff(inner_arg, "0.0");
+                                        ptr->MapDiff(inner_arg, Constant::Make(0.0));
                                 }
                         }
                         deps.push_back(ptr);
@@ -592,7 +594,7 @@ struct StringCodeGenerator{
                                         // \partial stmt / \partial symbol d symbol
                                         auto sub_diff = BinaryOperator::Mul(
                                                 expr->Diff( info->Name() ),
-                                                Symbol::Make(*info->GetDiffLexical(d_symbol)));
+                                                *info->GetDiffLexical(d_symbol));
 
                                         #if 0
                                         ss << indent << "// \\partial " << stmt->Name() << " / \\partial " << info->Name() << " d " << info->Name() << "\n";
@@ -609,7 +611,7 @@ struct StringCodeGenerator{
 
 
                                 std::string token = "__diff_" + stmt->Name() + "_" + d_symbol;
-                                stmt_dep->MapDiff( d_symbol, token);
+                                stmt_dep->MapDiff( d_symbol, Symbol::Make(token));
 
 
                                 ss << indent << "double " << token << " = ";
@@ -626,7 +628,7 @@ struct StringCodeGenerator{
                 }
                         
                 for( auto const& d_symbol : to_diff ){
-                        ss << indent << "*d_" + d_symbol << " = " << *deps.back()->GetDiffLexical(d_symbol) << ";\n";
+                        ss << indent << "*d_" + d_symbol << " = " << reinterpret_cast<Symbol*>(deps.back()->GetDiffLexical(d_symbol).get().get())->Name() << ";\n";
                 }
 
                 ss << indent << "return " << deps.back()->Name() << ";\n";
