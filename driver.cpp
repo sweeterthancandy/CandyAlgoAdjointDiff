@@ -7,6 +7,8 @@
 #include <unordered_map>
 
 #include <boost/optional.hpp>
+#include <boost/variant.hpp>
+#
 
 
 #if 0
@@ -17,6 +19,10 @@ private:
 #endif
 
 struct Operator : std::enable_shared_from_this<Operator>{
+
+        explicit Operator(std::string const& name)
+                : name_{name}
+        {}
         virtual ~Operator(){}
 
 
@@ -25,16 +31,87 @@ struct Operator : std::enable_shared_from_this<Operator>{
         #endif
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const=0;
         virtual void EmitCode(std::ostream& ss)const=0;
-        void Display(std::ostream& out = std::cout)const{
-                EmitCode(out);
-                out << "\n";
+        
+        size_t Arity()const{ return children_.size(); }
+        std::shared_ptr<Operator> At(size_t idx)const{
+                if( Arity() < idx ){
+                        throw std::domain_error("getting child that doesn't exist");
+                }
+                return children_.at(idx);
         }
+        auto&       Children()     { return children_; }
+        auto const& Children()const{ return children_; }
+
+        bool IsTerminal()const{ return Arity() == 0; }
+        bool IsNonTerminal()const{ return Arity() > 0; }
+
+        std::string const& Name()const{ return name_; }
+
+        virtual std::vector<std::string> HiddenArguments()const{ return {}; }
+
+        void Display(std::ostream& ostr = std::cout)const{
+
+                struct EndOfGroup{};
+                using ptr_t = std::shared_ptr<Operator const>;
+                using var_t = boost::variant<
+                        ptr_t ,
+                        EndOfGroup
+                >;
+                std::vector<var_t> stack{var_t{shared_from_this()}};
+
+                auto indent = [&](int extra = 0){
+                        return std::string((stack.size()+extra)*2,' ');
+                };
+
+                for(;stack.size();){
+                        auto head = stack.back();
+                        stack.pop_back();
+                        if( auto opt_ptr = boost::get<ptr_t>(&head) ){
+                                auto ptr = *opt_ptr;
+
+                                auto hidden = ptr->HiddenArguments();
+                                if( ptr->IsTerminal() ){
+                                        if( hidden.size() == 0 ){
+                                                ostr << indent() << ptr->Name() << "{}\n";
+                                        } else if( hidden.size() == 1 ){
+                                                ostr << indent() << ptr->Name() << "{" << hidden[0] << "}\n";
+                                        } else {
+                                                ostr << indent() << ptr->Name() << "{\n";
+                                                for(auto const& s : hidden ){
+                                                        ostr << indent(1) << s << "\n";
+                                                }
+                                                ostr << indent() << "}\n";
+                                        }
+                                } else {
+                                        ostr << indent() << ptr->Name() << "{\n";
+                                        stack.push_back(EndOfGroup{});
+                                        auto children = ptr->Children();
+                                        for(auto iter = children.rbegin(), end = children.rend();iter!=end;++iter){
+                                                stack.push_back(var_t{*iter});
+                                        }
+                                }
+                        } else if( auto ptr = boost::get<ptr_t>(&head)){
+                                ostr << indent() << "}\n";
+                        }
+                }
+        }
+protected:
+        size_t Push(std::shared_ptr<Operator> const& ptr){
+                size_t slot = children_.size();
+                children_.push_back(ptr);
+                return slot;
+        }
+private:
+        std::string name_;
+        std::vector<std::shared_ptr<Operator> > children_;
 
 };
 
+
 struct Constant : Operator{
         Constant(double value)
-                :value_(value)
+                :Operator{"Constant"}
+                ,value_(value)
         {}
         #if 0
         virtual double Eval(SymbolTable const& ST)const{
@@ -51,13 +128,15 @@ struct Constant : Operator{
         static std::shared_ptr<Operator> Make(double value){
                 return std::make_shared<Constant>(value);
         }
+        virtual std::vector<std::string> HiddenArguments()const{ return { std::to_string(value_) }; }
 private:
         double value_;
 };
 
 struct Symbol : Operator{
         Symbol(std::string const& name)
-                :name_(name)
+                :Operator{"Symbol"}
+                ,name_(name)
         {}
         #if 0
         virtual double Eval(SymbolTable const& ST)const{
@@ -92,29 +171,37 @@ enum BinaryOperatorKind{
 
 struct BinaryOperator : Operator{
         BinaryOperator(BinaryOperatorKind op, std::shared_ptr<Operator> left, std::shared_ptr<Operator> right)
-                :op_(op),
-                left_(left),
-                right_(right)
-        {}
+                :Operator{"BinaryOperator"}
+                ,op_(op)
+                        #if 0
+                        ,left_(left)
+                        ,right_(right)
+                        #endif
+        {
+                Push(left);
+                Push(right);
+        }
+        std::shared_ptr<Operator> LParam()const{ return At(0); }
+        std::shared_ptr<Operator> RParam()const{ return At(1); }
         #if 0
         virtual double Eval(SymbolTable const& ST)const{
                 switch(op_)
                 {
                 case OP_ADD:
                         {
-                                return left_->Eval(ST) + right_->Eval(ST);
+                                return left_->Eval(ST) + RParam()->Eval(ST);
                         }
                 case OP_SUB:
                         {
-                                return left_->Eval(ST) - right_->Eval(ST);
+                                return left_->Eval(ST) - RParam()->Eval(ST);
                         }
                 case OP_MUL:
                         {
-                                return left_->Eval(ST) * right_->Eval(ST);
+                                return left_->Eval(ST) * RParam()->Eval(ST);
                         }
                 case OP_DIV:
                         {
-                                return left_->Eval(ST) / right_->Eval(ST);
+                                return left_->Eval(ST) / RParam()->Eval(ST);
                         }
                 }
         }
@@ -126,22 +213,22 @@ struct BinaryOperator : Operator{
                         case OP_ADD:
                         {
                                 return Add(
-                                        left_->Diff(symbol),
-                                        right_->Diff(symbol)
+                                        LParam()->Diff(symbol),
+                                        RParam()->Diff(symbol)
                                 );
                         }
                         case OP_SUB:
                         {
                                 return Sub(
-                                        left_->Diff(symbol),
-                                        right_->Diff(symbol)
+                                        LParam()->Diff(symbol),
+                                        RParam()->Diff(symbol)
                                 );
                         }
                         case OP_MUL:
                         {
                                 return Add(
-                                        Mul( left_->Diff(symbol), right_),
-                                        Mul( left_, right_->Diff(symbol))
+                                        Mul( LParam()->Diff(symbol), RParam()),
+                                        Mul( LParam(), RParam()->Diff(symbol))
                                 );
                         }
                         case OP_DIV:
@@ -149,16 +236,16 @@ struct BinaryOperator : Operator{
                                 return Div(
                                         Sub(
                                                 Mul(
-                                                        left_->Diff(symbol),
-                                                        right_
+                                                        LParam()->Diff(symbol),
+                                                        RParam()
                                                 ),
                                                 Mul(
-                                                        left_,
-                                                        right_->Diff(symbol)
+                                                        LParam(),
+                                                        RParam()->Diff(symbol)
                                                 )
                                         ),
                                         Pow(
-                                                right_,
+                                                RParam(),
                                                 Constant::Make(2.0)
                                         )
                                 );
@@ -173,16 +260,16 @@ struct BinaryOperator : Operator{
                                 // ~ left ^ right
                                 //
                                 return Mul(
-                                        right_,
+                                        RParam(),
                                         Mul(
                                                 Pow(
-                                                        left_,
+                                                        LParam(),
                                                         Sub(
-                                                                right_,
+                                                                RParam(),
                                                                 Constant::Make(1.0)
                                                         )
                                                 ),
-                                                left_->Diff(symbol)
+                                                LParam()->Diff(symbol)
                                         )
                                 );
                         }
@@ -193,14 +280,14 @@ struct BinaryOperator : Operator{
         virtual void EmitCode(std::ostream& ss)const{
                 if( op_ == OP_POW ){
                         ss << "std::pow(";
-                        left_->EmitCode(ss);
+                        LParam()->EmitCode(ss);
                         ss << ", ";
-                        right_->EmitCode(ss);
+                        RParam()->EmitCode(ss);
                         ss << ")";
                 } else {
                         ss << "(";
                         ss << "(";
-                        left_->EmitCode(ss);
+                        LParam()->EmitCode(ss);
                         ss << ")";
                         switch(op_){
                         case OP_ADD: ss << "+"; break;
@@ -209,7 +296,7 @@ struct BinaryOperator : Operator{
                         case OP_DIV: ss << "/"; break;
                         }
                         ss << "(";
-                        right_->EmitCode(ss);
+                        RParam()->EmitCode(ss);
                         ss << ")";
                         ss << ")";
                 }
@@ -250,7 +337,8 @@ private:
 
 struct Exp : Operator{
         Exp(std::shared_ptr<Operator> arg)
-                :arg_(arg)
+                :Operator{"Exp"}
+                ,arg_(arg)
         {}
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
                 return BinaryOperator::Mul(
@@ -271,7 +359,8 @@ private:
 
 struct Log : Operator{
         Log(std::shared_ptr<Operator> arg)
-                :arg_(arg)
+                :Operator{"Log"}
+                ,arg_(arg)
         {}
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
                 return BinaryOperator::Div(
@@ -294,7 +383,8 @@ private:
 // normal distribution CFS
 struct Phi : Operator{
         Phi(std::shared_ptr<Operator> arg)
-                :arg_(arg)
+                :Operator{"Phi"}
+                ,arg_(arg)
         {}
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
                 // f(x) = 1/\sqrt{2 \pi} \exp{-\frac{1}{2}x^2}
@@ -376,6 +466,7 @@ private:
         std::vector<std::shared_ptr<Statement> > stmts_;
 };
 
+
 struct StringCodeGenerator{
         void Emit(std::ostream& ss, Function const& f)const{
 
@@ -451,7 +542,9 @@ struct StringCodeGenerator{
                         
                         auto stmt_dep = std::make_shared<VariableInfo>(stmt->Name());
                         
-                        ss << indent << "// expr\n";
+                        ss << indent << "/* expr\n";
+                        expr->Display(ss);
+                        ss << indent << "*/";
                         ss << indent << "double " << stmt_dep->Name() << " = ";
                         expr->EmitCode(ss);
                         ss << ";\n";
