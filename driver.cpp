@@ -737,6 +737,12 @@ void black_scholes(){
         cg.Emit(fstr, f);
         fstr << R"(
 
+double finite_diff(double epsilon, double d_t, double d_T, double d_r, double d_S, double d_K, double d_vol){
+        double dummy;
+        double lower = black( t - d_t*epsilon/2 , &dummy, T - d_T*epsilon/2  , &dummy, r - d_r*epsilon/2  , &dummy, S - d_S*epsilon/2  , &dummy, K - d_K*epsilon/2  , &dummy, vol - d_vol*epsilon/2, &dummy);
+        double upper = black( t + d_t*epsilon/2 , &dummy, T + d_T*epsilon/2  , &dummy, r + d_r*epsilon/2  , &dummy, S + d_S*epsilon/2  , &dummy, K + d_K*epsilon/2  , &dummy, vol + d_vol*epsilon/2, &dummy);
+        double finite_diff = ( upper - lower ) / epsilon;
+}
 int main(){
         double t   = 0.0;
         double T   = 10.0;
@@ -764,6 +770,7 @@ int main(){
         double residue = d_t - finite_diff;
 
         printf("%f,%f,%f,%f,%f,%f => %f,%f => %f,%f,%f\n", t, T, r, S, K, vol, value, d1, d_t, finite_diff, residue);
+
         
 
 }
