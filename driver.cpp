@@ -51,6 +51,12 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 }
                 return children_.at(idx);
         }
+        void Rebind(size_t idx, std::shared_ptr<Operator> const& ptr){
+                if( Arity() < idx ){
+                        throw std::domain_error("getting child that doesn't exist");
+                }
+                children_.at(idx) = ptr;
+        }
         auto&       Children()     { return children_; }
         auto const& Children()const{ return children_; }
 
@@ -565,8 +571,8 @@ struct ConstantDescription{
                 auto constant = static_cast<Constant*>(root.get());
                 opt_value_ = constant->Value();
         }
-        bool IsZero()const{ return opt_value_ && opt_value_ == 0.0; }
-        bool IsOne()const{ return opt_value_ && opt_value_ == 1.0; }
+        bool IsZero()const{ return opt_value_ && (*opt_value_ == 0.0 || *opt_value_ == -0.0); }
+        bool IsOne()const{ return opt_value_ && *opt_value_ == 1.0; }
         bool IsConstantValue()const{ return !! opt_value_; }
         double ValueOrThrow()const{
                 if( ! opt_value_ )
@@ -677,6 +683,27 @@ struct FoldZero{
                                 bin_op->OpKind(),
                                 left_folded,
                                 right_folded);
+                }
+                
+                if( root->Kind() == OPKind_UnaryOperator ){
+                        auto unary_op = static_cast<UnaryOperator*>(root.get());
+
+                        auto folded_arg = this->Fold(unary_op->At(0));
+
+                        auto arg_desc  = ConstantDescription{folded_arg};
+
+                        if( arg_desc.IsZero() ){
+                                return Constant::Make(0.0);
+                        }
+
+                        return UnaryOperator::UnaryMinus(folded_arg);
+                }
+
+                if( root->IsNonTerminal() ){
+                        for(size_t idx=0;idx!=root->Arity();++idx){
+                                auto folded = this->Fold(root->At(idx));
+                                root->Rebind(idx, folded);
+                        }
                 }
                 return root;
         }
