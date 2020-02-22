@@ -296,11 +296,30 @@ struct Phi : Operator{
         Phi(std::shared_ptr<Operator> arg)
                 :arg_(arg)
         {}
-        #if 0
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
                 // f(x) = 1/\sqrt{2 \pi} \exp{-\frac{1}{2}x^2}
+
+                return 
+                        BinaryOperator::Mul(
+                                BinaryOperator::Div(
+                                        Exp::Make(
+                                                BinaryOperator::Sub(
+                                                        Constant::Make(0.0),
+                                                        BinaryOperator::Mul(
+                                                                Constant::Make(0.5),
+                                                                BinaryOperator::Pow(
+                                                                        arg_,
+                                                                        Constant::Make(2.0)
+                                                                )
+                                                        )
+                                                )
+                                        ),
+                                        Constant::Make(2.506628274631000502415765284811045253006986740609938316629)
+                                ),
+                                arg_->Diff(symbol)
+                        );
+
         }
-        #endif
         virtual void EmitCode(std::ostream& ss)const{
                 // std::erfc(-x/std::sqrt(2))/2
                 ss << "std::erfc(-(";
@@ -308,9 +327,10 @@ struct Phi : Operator{
                 ss << ")/std::sqrt(2))/2";
         }
 
-        static std::shared_ptr<Operator> Make(double value){
-                return std::make_shared<Constant>(value);
+        static std::shared_ptr<Operator> Make(std::shared_ptr<Operator> const& arg){
+                return std::make_shared<Phi>(arg);
         }
+
 private:
         std::shared_ptr<Operator> arg_;
 };
@@ -495,7 +515,8 @@ void example_0(){
         f.AddArgument("y");
 
         //auto expr_0 = BinaryOperator::Mul(Log::Make(BinaryOperator::Mul(Symbol::Make("x"),Symbol::Make("x"))),  Exp::Make(Symbol::Make("y")));
-        auto expr_0 = BinaryOperator::Pow(Symbol::Make("x"), Constant::Make(2));
+        //auto expr_0 = BinaryOperator::Pow(Symbol::Make("x"), Constant::Make(2));
+        auto expr_0 = Phi::Make(Symbol::Make("x"));
 
         auto stmt_0 = std::make_shared<Statement>("stmt0", expr_0);
 
@@ -658,10 +679,38 @@ void black_scholes(){
                 )
         );
 
-
         auto stmt_0 = std::make_shared<Statement>("stmt0", d1);
 
+        
+        auto d2 = BinaryOperator::Sub(
+                Symbol::Make(stmt_0->Name()),
+                BinaryOperator::Mul(
+                        Symbol::Make("vol"),
+                        time_to_expiry
+                )
+        );
+
+
+        auto stmt_1 = std::make_shared<Statement>("stmt1", d2);
+        
+        auto pv = BinaryOperator::Mul(
+                Symbol::Make("K"),
+                Exp::Make(
+                        BinaryOperator::Mul(
+                                BinaryOperator::Sub(
+                                        Constant::Make(0.0),
+                                        Symbol::Make("r")
+                                ),
+                                time_to_expiry
+                        )
+                )
+        );
+        
+        auto stmt_2 = std::make_shared<Statement>("stmt2", pv);
+
         f.AddStatement(stmt_0);
+        f.AddStatement(stmt_1);
+        f.AddStatement(stmt_2);
 
         std::ofstream fstr("prog.cxx");
         fstr << R"(
@@ -707,5 +756,5 @@ int main(){
 }
 
 int main(){
-        black_scholes();
+        example_0();
 }
