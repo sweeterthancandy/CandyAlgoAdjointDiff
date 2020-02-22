@@ -19,6 +19,7 @@ private:
 #endif
 
 enum OperatorKind{
+        OPKind_UnaryOperator,
         OPKind_BinaryOperator,
         OPKind_Constant,
         OPKind_Other,
@@ -200,6 +201,55 @@ struct Symbol : Operator{
 private:
         std::string name_;
 };
+
+enum UnaryOperatorKind{
+        UOP_USUB,
+};
+
+struct UnaryOperator : Operator{
+        UnaryOperator(UnaryOperatorKind op, std::shared_ptr<Operator> arg)
+                :Operator{"UnaryOperator", OPKind_UnaryOperator}
+                ,op_(op)
+        {
+                Push(arg);
+        }
+
+        UnaryOperatorKind OpKind()const{ return op_; }
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override
+        {
+                return UnaryMinus(At(0)->Diff(symbol));
+        }
+
+        static std::shared_ptr<Operator> UnaryMinus(std::shared_ptr<Operator> const& arg){
+                return std::make_shared<UnaryOperator>(UOP_USUB, arg);
+        }
+
+
+
+
+        virtual void EmitCode(std::ostream& ss)const override{
+                ss << "(-(";
+                At(0)->EmitCode(ss);
+                ss << "))";
+        }
+
+
+private:
+        UnaryOperatorKind op_;
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 enum BinaryOperatorKind{
         OP_ADD,
@@ -508,27 +558,27 @@ private:
         std::vector<std::shared_ptr<Statement> > stmts_;
 };
 
+struct ConstantDescription{
+        ConstantDescription(std::shared_ptr<Operator> root){
+                if( root->Kind() != OPKind_Constant )
+                        return;
+                auto constant = static_cast<Constant*>(root.get());
+                opt_value_ = constant->Value();
+        }
+        bool IsZero()const{ return opt_value_ && opt_value_ == 0.0; }
+        bool IsOne()const{ return opt_value_ && opt_value_ == 1.0; }
+        bool IsConstantValue()const{ return !! opt_value_; }
+        double ValueOrThrow()const{
+                if( ! opt_value_ )
+                        throw std::domain_error("have no value");
+                return opt_value_.get();
+        }
+private:
+        boost::optional<double> opt_value_;
+};
 
 struct FoldZero{
 
-        struct ConstantDescription{
-                ConstantDescription(std::shared_ptr<Operator> root){
-                        if( root->Kind() != OPKind_Constant )
-                                return;
-                        auto constant = static_cast<Constant*>(root.get());
-                        opt_value_ = constant->Value();
-                }
-                bool IsZero()const{ return opt_value_ && opt_value_ == 0.0; }
-                bool IsOne()const{ return opt_value_ && opt_value_ == 1.0; }
-                bool IsConstantValue()const{ return !! opt_value_; }
-                double ValueOrThrow()const{
-                        if( ! opt_value_ )
-                                throw std::domain_error("have no value");
-                        return opt_value_.get();
-                }
-        private:
-                boost::optional<double> opt_value_;
-        };
         std::shared_ptr<Operator> Fold(std::shared_ptr<Operator> root){
                 if( root->Kind() == OPKind_BinaryOperator ){
                         auto bin_op = static_cast<BinaryOperator*>(root.get());
@@ -571,6 +621,10 @@ struct FoldZero{
 
                                         if( right_desc.IsZero())
                                                 return left_folded;
+
+                                        if( left_desc.IsZero() ){
+                                                return UnaryOperator::UnaryMinus(right_folded);
+                                        }
                                         break;
                                 }
                                 case OP_MUL:
@@ -597,6 +651,25 @@ struct FoldZero{
                                 }
                                 case OP_POW:
                                 {
+                                        if( left_desc.IsConstantValue() && 
+                                            right_desc.IsConstantValue() ){
+                                                return Constant::Make(
+                                                        std::pow(
+                                                                left_desc.ValueOrThrow()
+                                                                ,right_desc.ValueOrThrow()
+                                                        )
+                                                );
+                                        }
+
+                                        if( left_desc.IsZero() )
+                                                return Constant::Make(0.0);
+
+                                        if( right_desc.IsOne() ){
+                                                return left_folded;
+                                        }
+                                        if( right_desc.IsZero() ){
+                                                return Constant::Make(1.0);
+                                        }
                                         break;
                                 }
                         }
