@@ -8,10 +8,6 @@
 
 #include <boost/optional.hpp>
 
-enum OperatorKind{
-        OpKind_Unknown,
-        OpKind_Statement,
-};
 
 #if 0
 struct SymbolTable{
@@ -21,10 +17,8 @@ private:
 #endif
 
 struct Operator : std::enable_shared_from_this<Operator>{
-        explicit Operator(OperatorKind kind = OpKind_Unknown):kind_{kind}{}
         virtual ~Operator(){}
 
-        OperatorKind Kind()const{ return kind_; }
 
         #if 0
         virtual double Eval(SymbolTable const& ST)const=0;
@@ -36,9 +30,6 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 out << "\n";
         }
 
-
-private:
-        OperatorKind kind_;
 };
 
 struct Constant : Operator{
@@ -205,6 +196,70 @@ private:
         std::shared_ptr<Operator> right_;
 };
 
+struct Exp : Operator{
+        Exp(std::shared_ptr<Operator> arg)
+                :arg_(arg)
+        {}
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
+                return BinaryOperator::Mul(
+                        std::make_shared<Exp>(arg_),
+                        arg_->Diff(symbol));
+        }
+        virtual void EmitCode(std::ostream& ss)const{
+                ss << "std::exp(";
+                arg_->EmitCode(ss);
+                ss << ")";
+        }
+        static std::shared_ptr<Exp> Make(std::shared_ptr<Operator> const& arg){
+                return std::make_shared<Exp>(arg);
+        }
+private:
+        std::shared_ptr<Operator> arg_;
+};
+
+struct Log : Operator{
+        Log(std::shared_ptr<Operator> arg)
+                :arg_(arg)
+        {}
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
+                return BinaryOperator::Div(
+                        arg_->Diff(symbol),
+                        arg_);
+        }
+        virtual void EmitCode(std::ostream& ss)const{
+                ss << "std::log(";
+                arg_->EmitCode(ss);
+                ss << ")";
+        }
+        static std::shared_ptr<Log> Make(std::shared_ptr<Operator> const& arg){
+                return std::make_shared<Log>(arg);
+        }
+private:
+        std::shared_ptr<Operator> arg_;
+};
+
+// normal distribution CFS
+struct Phi : Operator{
+        Phi(std::shared_ptr<Operator> arg)
+                :arg_(arg)
+        {}
+        #if 0
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
+        }
+        #endif
+        virtual void EmitCode(std::ostream& ss)const{
+                // std::erfc(-x/std::sqrt(2))/2
+                ss << "std::erfc(-(";
+                arg_->EmitCode(ss);
+                ss << ")/std::sqrt(2))/2";
+        }
+
+        static std::shared_ptr<Operator> Make(double value){
+                return std::make_shared<Constant>(value);
+        }
+private:
+        std::shared_ptr<Operator> arg_;
+};
 
 struct Statement : Symbol{
         Statement(std::string const& name, std::shared_ptr<Operator> expr)
@@ -239,8 +294,16 @@ struct Function{
         }
         auto const& Arguments()const{ return args_; }
         auto const& Statements()const{ return stmts_; }
+        std::string const& Name()const{ return name_; }
 
-        void Emit(std::ostream& ss)const{
+private:
+        std::string name_;
+        std::vector<std::string> args_;
+        std::vector<std::shared_ptr<Statement> > stmts_;
+};
+
+struct StringCodeGenerator{
+        void Emit(std::ostream& ss, Function const& f)const{
 
                 // we have a vector [ x1, x2, ... ] which are the function 
                 // parameters. 
@@ -265,11 +328,11 @@ struct Function{
                 };
 
 
-                auto to_diff = args_;
+                auto to_diff = f.Arguments();
 
 
                 std::vector<std::shared_ptr<VariableInfo> > deps;
-                for( auto const& arg : args_ ){
+                for( auto const& arg : f.Arguments() ){
                         auto ptr = std::make_shared<VariableInfo>(arg);
                         for( auto const& inner_arg : to_diff ){
                                 if( arg == inner_arg ){
@@ -283,7 +346,7 @@ struct Function{
 
 
 
-                ss << "double " << name_ << "(";
+                ss << "double " << f.Name() << "(";
                 for(size_t idx=0;idx!=deps.size();++idx){
                         if( idx != 0 ) 
                                 ss << ", ";
@@ -298,7 +361,7 @@ struct Function{
 
                 TemporaryAllocator temp_alloc;
 
-                for(size_t idx=0;idx!=stmts_.size();++idx){
+                for(size_t idx=0;idx!=f.Statements().size();++idx){
                         // for each statement we need to add two calculations to the
                         // infomation
                         //      statement = expr
@@ -309,7 +372,7 @@ struct Function{
 
                         //
 
-                        auto const& stmt = stmts_[idx];
+                        auto const& stmt = f.Statements()[idx];
                         auto const& expr = stmt->Expr();
                         
                         auto stmt_dep = std::make_shared<VariableInfo>(stmt->Name());
@@ -368,10 +431,6 @@ struct Function{
                 ss << "}\n";
 
         }
-private:
-        std::string name_;
-        std::vector<std::string> args_;
-        std::vector<std::shared_ptr<Statement> > stmts_;
 };
 
 void example_0(){
@@ -381,18 +440,24 @@ void example_0(){
         f.AddArgument("x");
         f.AddArgument("y");
 
-        auto expr_0 = BinaryOperator::Mul(BinaryOperator::Mul(Symbol::Make("x"),Symbol::Make("x")),  Symbol::Make("y"));
+        auto expr_0 = BinaryOperator::Mul(Log::Make(BinaryOperator::Mul(Symbol::Make("x"),Symbol::Make("x"))),  Exp::Make(Symbol::Make("y")));
 
         auto stmt_0 = std::make_shared<Statement>("stmt0", expr_0);
 
         f.AddStatement(stmt_0);
 
-        std::ofstream fstr("prog.c");
-        f.Emit(fstr);
+        std::ofstream fstr("prog.cxx");
         fstr << R"(
-#include <stdio.h>
+#include <cstdio>
+#include <cmath>
+)";
+
+        StringCodeGenerator cg;
+        cg.Emit(fstr, f);
+        fstr << R"(
+
 int main(){
-        double x_min = -2.0;
+        double x_min = 0.1;
         double x_max = +2.0;
         double y_min = -2.0;
         double y_max = +2.0;
@@ -451,7 +516,8 @@ void example_1(){
         f.AddStatement(stmt_1);
 
         std::ofstream fstr("prog.c");
-        f.Emit(fstr);
+        StringCodeGenerator cg;
+        cg.Emit(fstr, f);
         fstr << R"(
 #include <stdio.h>
 int main(){
@@ -487,5 +553,5 @@ int main(){
 
 
 int main(){
-        example_1();
+        example_0();
 }
