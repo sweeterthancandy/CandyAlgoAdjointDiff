@@ -18,12 +18,23 @@ private:
 };
 #endif
 
+enum OperatorKind{
+        OPKind_BinaryOperator,
+        OPKind_Constant,
+        OPKind_Other,
+};
+
 struct Operator : std::enable_shared_from_this<Operator>{
 
-        explicit Operator(std::string const& name)
+        explicit Operator(std::string const& name, OperatorKind kind = OPKind_Other)
                 : name_{name}
+                , kind_{kind}
         {}
         virtual ~Operator(){}
+
+        OperatorKind Kind()const{ return kind_; }
+
+
 
 
         #if 0
@@ -130,12 +141,14 @@ private:
         std::string name_;
         std::vector<std::shared_ptr<Operator> > children_;
 
+        OperatorKind kind_;
+
 };
 
 
 struct Constant : Operator{
         Constant(double value)
-                :Operator{"Constant"}
+                :Operator{"Constant", OPKind_Constant}
                 ,value_(value)
         {}
         #if 0
@@ -154,6 +167,7 @@ struct Constant : Operator{
                 return std::make_shared<Constant>(value);
         }
         virtual std::vector<std::string> HiddenArguments()const{ return { std::to_string(value_) }; }
+        double Value()const{ return value_; }
 private:
         double value_;
 };
@@ -197,16 +211,14 @@ enum BinaryOperatorKind{
 
 struct BinaryOperator : Operator{
         BinaryOperator(BinaryOperatorKind op, std::shared_ptr<Operator> left, std::shared_ptr<Operator> right)
-                :Operator{"BinaryOperator"}
+                :Operator{"BinaryOperator", OPKind_BinaryOperator}
                 ,op_(op)
-                        #if 0
-                        ,left_(left)
-                        ,right_(right)
-                        #endif
         {
                 Push(left);
                 Push(right);
         }
+
+        BinaryOperatorKind OpKind()const{ return op_; }
         virtual std::vector<std::string> HiddenArguments()const override{
                 switch(op_){
                 case OP_ADD: return {"ADD"};
@@ -497,9 +509,109 @@ private:
 };
 
 
+struct FoldZero{
+        enum ConstantCategory{
+                ConstCatUnknown,
+                ConstCatZero,
+                ConstCatOne,
+        };
+        static ConstantCategory IsConstantZero(std::shared_ptr<Operator> root){
+                if( root->Kind() != OPKind_Constant )
+                        return ConstCatUnknown;
+                auto constant = static_cast<Constant*>(root.get());
+                if( constant->Value() == 0.0)
+                        return ConstCatZero;
+                if( constant->Value() == 1.0)
+                        return ConstCatOne;
+                return ConstCatUnknown;
+        }
+        std::shared_ptr<Operator> Fold(std::shared_ptr<Operator> root){
+                if( root->Kind() == OPKind_BinaryOperator ){
+                        auto bin_op = static_cast<BinaryOperator*>(root.get());
+
+                        auto left_folded = this->Fold(bin_op->At(0));
+                        auto right_folded = this->Fold(bin_op->At(1));
+
+                        auto left_category  = IsConstantZero(left_folded);
+                        auto right_category = IsConstantZero(right_folded);
+
+                        #if 0
+                        return std::make_shared<BinaryOperator>(
+                                bin_op->OpKind(),
+                                left_folded,
+                                right_folded);
+                        #endif
+
+                        auto left_zero  = left_category  == ConstCatZero;
+                        auto right_zero = right_category == ConstCatZero;
+                        auto left_one   = left_category  == ConstCatOne;
+                        auto right_one  = right_category == ConstCatOne;
+
+                        if( left_zero && right_zero ){
+                                // in this case we have identify zero 
+                                // in all cases
+                                return Constant::Make(0.0);
+                        } else if( left_zero || right_zero ){
+
+                                switch(bin_op->OpKind())
+                                {
+                                        case OP_ADD:
+                                        {
+                                                if( left_zero ){
+                                                        return right_folded;
+                                                } else {
+                                                        return left_folded;
+                                                }
+                                        }
+                                        case OP_SUB:
+                                        {
+                                                if( left_zero ){
+                                                        // cant fold yet, no unary operator
+                                                        return std::make_shared<BinaryOperator>(
+                                                                bin_op->OpKind(),
+                                                                left_folded,
+                                                                right_folded);
+                                                } else {
+                                                        return left_folded;
+                                                }
+                                                break;
+                                        }
+                                        case OP_MUL:
+                                        {
+                                                return Constant::Make(0.0);
+                                        }
+                                        case OP_DIV:
+                                        {
+                                                if( right_zero ){
+                                                        throw std::domain_error("have divide by zero");
+                                                }
+                                                return Constant::Make(0.0);
+                                        }
+                                        case OP_POW:
+                                        {
+                                                if( right_zero ){
+                                                        return Constant::Make(1.0);
+                                                }
+                                                break;
+                                        }
+
+                                }
+                        } else {
+                                return std::make_shared<BinaryOperator>(
+                                        bin_op->OpKind(),
+                                        left_folded,
+                                        right_folded);
+                        }
+                }
+                return root;
+        }
+};
+
 
 struct StringCodeGenerator{
         void Emit(std::ostream& ss, Function const& f)const{
+
+                FoldZero folder;
 
                 // we have a vector [ x1, x2, ... ] which are the function 
                 // parameters. 
@@ -574,9 +686,11 @@ struct StringCodeGenerator{
                         
                         auto stmt_dep = std::make_shared<VariableInfo>(stmt->Name());
                         
+                        #if 0
                         ss << indent << "/* expr\n";
                         expr->Display(ss);
                         ss << indent << "*/\n";
+                        #endif
                         ss << indent << "double " << stmt_dep->Name() << " = ";
                         expr->EmitCode(ss);
                         ss << ";\n";
@@ -596,12 +710,18 @@ struct StringCodeGenerator{
                                                 expr->Diff( info->Name() ),
                                                 *info->GetDiffLexical(d_symbol));
 
+                                        sub_diff = folder.Fold(sub_diff);
+
+
+
                                         #if 0
                                         ss << indent << "// \\partial " << stmt->Name() << " / \\partial " << info->Name() << " d " << info->Name() << "\n";
                                         #endif
+                                        #if 0
                                         ss << indent << "/* expr\n";
                                         sub_diff->Display(ss);
                                         ss << indent << "*/\n";
+                                        #endif
                                         ss << indent << "double " << temp_name << " = ";
                                         sub_diff->EmitCode(ss);
                                         ss << ";\n";
