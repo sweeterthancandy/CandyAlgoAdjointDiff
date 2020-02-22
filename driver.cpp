@@ -510,21 +510,25 @@ private:
 
 
 struct FoldZero{
-        enum ConstantCategory{
-                ConstCatUnknown,
-                ConstCatZero,
-                ConstCatOne,
+
+        struct ConstantDescription{
+                ConstantDescription(std::shared_ptr<Operator> root){
+                        if( root->Kind() != OPKind_Constant )
+                                return;
+                        auto constant = static_cast<Constant*>(root.get());
+                        opt_value_ = constant->Value();
+                }
+                bool IsZero()const{ return opt_value_ && opt_value_ == 0.0; }
+                bool IsOne()const{ return opt_value_ && opt_value_ == 1.0; }
+                bool IsConstantValue()const{ return !! opt_value_; }
+                double ValueOrThrow()const{
+                        if( ! opt_value_ )
+                                throw std::domain_error("have no value");
+                        return opt_value_.get();
+                }
+        private:
+                boost::optional<double> opt_value_;
         };
-        static ConstantCategory IsConstantZero(std::shared_ptr<Operator> root){
-                if( root->Kind() != OPKind_Constant )
-                        return ConstCatUnknown;
-                auto constant = static_cast<Constant*>(root.get());
-                if( constant->Value() == 0.0)
-                        return ConstCatZero;
-                if( constant->Value() == 1.0)
-                        return ConstCatOne;
-                return ConstCatUnknown;
-        }
         std::shared_ptr<Operator> Fold(std::shared_ptr<Operator> root){
                 if( root->Kind() == OPKind_BinaryOperator ){
                         auto bin_op = static_cast<BinaryOperator*>(root.get());
@@ -532,76 +536,74 @@ struct FoldZero{
                         auto left_folded = this->Fold(bin_op->At(0));
                         auto right_folded = this->Fold(bin_op->At(1));
 
-                        auto left_category  = IsConstantZero(left_folded);
-                        auto right_category = IsConstantZero(right_folded);
+                        auto left_desc  = ConstantDescription{left_folded};
+                        auto right_desc = ConstantDescription{right_folded};
 
-                        #if 0
+
+                        switch(bin_op->OpKind())
+                        {
+                                case OP_ADD:
+                                {
+                                        if( left_desc.IsConstantValue() && 
+                                            right_desc.IsConstantValue() ){
+                                                double sum = 0.0;
+                                                sum += left_desc.ValueOrThrow();
+                                                sum += right_desc.ValueOrThrow();
+                                                return Constant::Make(sum);
+                                        }
+                                        if( left_desc.IsZero() )
+                                                return right_folded;
+                                        if( right_desc.IsZero() )
+                                                return left_folded;
+
+
+                                        break;
+                                }
+                                case OP_SUB:
+                                {
+                                        if( left_desc.IsConstantValue() && 
+                                            right_desc.IsConstantValue() ){
+                                                double sum = 0.0;
+                                                sum += left_desc.ValueOrThrow();
+                                                sum -= right_desc.ValueOrThrow();
+                                                return Constant::Make(sum);
+                                        }
+
+                                        if( right_desc.IsZero())
+                                                return left_folded;
+                                        break;
+                                }
+                                case OP_MUL:
+                                {
+                                        if( left_desc.IsZero() || right_desc.IsZero() ){
+                                                return Constant::Make(0.0);
+                                        }
+                                        if( left_desc.IsOne() )
+                                                return right_folded;
+                                        if( right_desc.IsOne() )
+                                                return left_folded;
+                                        break;
+                                }
+                                case OP_DIV:
+                                {
+                                        if( ! left_desc.IsZero() ){
+                                                if( right_desc.IsZero() ){
+                                                        throw std::domain_error("have divide by zero");
+                                                }
+                                        } else {
+                                                return Constant::Make(0.0);
+                                        }
+                                        break;
+                                }
+                                case OP_POW:
+                                {
+                                        break;
+                                }
+                        }
                         return std::make_shared<BinaryOperator>(
                                 bin_op->OpKind(),
                                 left_folded,
                                 right_folded);
-                        #endif
-
-                        auto left_zero  = left_category  == ConstCatZero;
-                        auto right_zero = right_category == ConstCatZero;
-                        auto left_one   = left_category  == ConstCatOne;
-                        auto right_one  = right_category == ConstCatOne;
-
-                        if( left_zero && right_zero ){
-                                // in this case we have identify zero 
-                                // in all cases
-                                return Constant::Make(0.0);
-                        } else if( left_zero || right_zero ){
-
-                                switch(bin_op->OpKind())
-                                {
-                                        case OP_ADD:
-                                        {
-                                                if( left_zero ){
-                                                        return right_folded;
-                                                } else {
-                                                        return left_folded;
-                                                }
-                                        }
-                                        case OP_SUB:
-                                        {
-                                                if( left_zero ){
-                                                        // cant fold yet, no unary operator
-                                                        return std::make_shared<BinaryOperator>(
-                                                                bin_op->OpKind(),
-                                                                left_folded,
-                                                                right_folded);
-                                                } else {
-                                                        return left_folded;
-                                                }
-                                                break;
-                                        }
-                                        case OP_MUL:
-                                        {
-                                                return Constant::Make(0.0);
-                                        }
-                                        case OP_DIV:
-                                        {
-                                                if( right_zero ){
-                                                        throw std::domain_error("have divide by zero");
-                                                }
-                                                return Constant::Make(0.0);
-                                        }
-                                        case OP_POW:
-                                        {
-                                                if( right_zero ){
-                                                        return Constant::Make(1.0);
-                                                }
-                                                break;
-                                        }
-
-                                }
-                        } else {
-                                return std::make_shared<BinaryOperator>(
-                                        bin_op->OpKind(),
-                                        left_folded,
-                                        right_folded);
-                        }
                 }
                 return root;
         }
