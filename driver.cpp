@@ -103,8 +103,10 @@ struct Operator : std::enable_shared_from_this<Operator>{
                                 }
                                 #endif
                         } else {
-                                std::cerr << __FILE__ << ":" << __LINE__ << ":A\n"; // __CandyTag__A
                                 ostr << indent() << ptr->Name() << "{\n";
+                                for(auto const& s : hidden ){
+                                        ostr << indent(1) << s << "\n";
+                                }
                                 auto children = ptr->Children();
                                 #if 0
                                 std::cout << "stack.size() => " << stack.size() << "\n"; // __CandyPrint__(cxx-print-scalar,stack.size())
@@ -205,6 +207,16 @@ struct BinaryOperator : Operator{
                 Push(left);
                 Push(right);
         }
+        virtual std::vector<std::string> HiddenArguments()const override{
+                switch(op_){
+                case OP_ADD: return {"ADD"};
+                case OP_SUB: return {"SUB"};
+                case OP_MUL: return {"MUL"};
+                case OP_DIV: return {"DIV"};
+                case OP_POW: return {"POW"};
+                }
+                return {"unknown_"};
+        }
         std::shared_ptr<Operator> LParam()const{ return At(0); }
         std::shared_ptr<Operator> RParam()const{ return At(1); }
         #if 0
@@ -230,7 +242,7 @@ struct BinaryOperator : Operator{
                 }
         }
         #endif
-        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override
         {
                 switch(op_)
                 {
@@ -301,7 +313,7 @@ struct BinaryOperator : Operator{
         }
 
 
-        virtual void EmitCode(std::ostream& ss)const{
+        virtual void EmitCode(std::ostream& ss)const override{
                 if( op_ == OP_POW ){
                         ss << "std::pow(";
                         LParam()->EmitCode(ss);
@@ -355,52 +367,48 @@ struct BinaryOperator : Operator{
 
 private:
         BinaryOperatorKind op_;
-        std::shared_ptr<Operator> left_;
-        std::shared_ptr<Operator> right_;
 };
 
 struct Exp : Operator{
         Exp(std::shared_ptr<Operator> arg)
                 :Operator{"Exp"}
-                ,arg_(arg)
-        {}
+        {
+                Push(arg);
+        }
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
                 return BinaryOperator::Mul(
-                        std::make_shared<Exp>(arg_),
-                        arg_->Diff(symbol));
+                        std::make_shared<Exp>(At(0)),
+                        At(0)->Diff(symbol));
         }
         virtual void EmitCode(std::ostream& ss)const{
                 ss << "std::exp(";
-                arg_->EmitCode(ss);
+                At(0)->EmitCode(ss);
                 ss << ")";
         }
         static std::shared_ptr<Exp> Make(std::shared_ptr<Operator> const& arg){
                 return std::make_shared<Exp>(arg);
         }
-private:
-        std::shared_ptr<Operator> arg_;
 };
 
 struct Log : Operator{
         Log(std::shared_ptr<Operator> arg)
                 :Operator{"Log"}
-                ,arg_(arg)
-        {}
+        {
+                Push(arg);
+        }
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
                 return BinaryOperator::Div(
-                        arg_->Diff(symbol),
-                        arg_);
+                        At(0)->Diff(symbol),
+                        At(0));
         }
         virtual void EmitCode(std::ostream& ss)const{
                 ss << "std::log(";
-                arg_->EmitCode(ss);
+                At(0)->EmitCode(ss);
                 ss << ")";
         }
         static std::shared_ptr<Log> Make(std::shared_ptr<Operator> const& arg){
                 return std::make_shared<Log>(arg);
         }
-private:
-        std::shared_ptr<Operator> arg_;
 };
 
 
@@ -408,8 +416,9 @@ private:
 struct Phi : Operator{
         Phi(std::shared_ptr<Operator> arg)
                 :Operator{"Phi"}
-                ,arg_(arg)
-        {}
+        {
+                Push(arg);
+        }
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
                 // f(x) = 1/\sqrt{2 \pi} \exp{-\frac{1}{2}x^2}
 
@@ -422,7 +431,7 @@ struct Phi : Operator{
                                                         BinaryOperator::Mul(
                                                                 Constant::Make(0.5),
                                                                 BinaryOperator::Pow(
-                                                                        arg_,
+                                                                        At(0),
                                                                         Constant::Make(2.0)
                                                                 )
                                                         )
@@ -430,23 +439,20 @@ struct Phi : Operator{
                                         ),
                                         Constant::Make(2.506628274631000502415765284811045253006986740609938316629)
                                 ),
-                                arg_->Diff(symbol)
+                                At(0)->Diff(symbol)
                         );
 
         }
         virtual void EmitCode(std::ostream& ss)const{
                 // std::erfc(-x/std::sqrt(2))/2
                 ss << "std::erfc(-(";
-                arg_->EmitCode(ss);
+                At(0)->EmitCode(ss);
                 ss << ")/std::sqrt(2))/2";
         }
 
         static std::shared_ptr<Operator> Make(std::shared_ptr<Operator> const& arg){
                 return std::make_shared<Phi>(arg);
         }
-
-private:
-        std::shared_ptr<Operator> arg_;
 };
 
 struct Statement : Symbol{
@@ -568,7 +574,7 @@ struct StringCodeGenerator{
                         
                         ss << indent << "/* expr\n";
                         expr->Display(ss);
-                        ss << indent << "*/";
+                        ss << indent << "*/\n";
                         ss << indent << "double " << stmt_dep->Name() << " = ";
                         expr->EmitCode(ss);
                         ss << ";\n";
