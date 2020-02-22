@@ -516,7 +516,7 @@ void example_0(){
 
         //auto expr_0 = BinaryOperator::Mul(Log::Make(BinaryOperator::Mul(Symbol::Make("x"),Symbol::Make("x"))),  Exp::Make(Symbol::Make("y")));
         //auto expr_0 = BinaryOperator::Pow(Symbol::Make("x"), Constant::Make(2));
-        auto expr_0 = Phi::Make(Symbol::Make("x"));
+        auto expr_0 = Phi::Make(BinaryOperator::Pow(Symbol::Make("x"), Constant::Make(3)));
 
         auto stmt_0 = std::make_shared<Statement>("stmt0", expr_0);
 
@@ -562,7 +562,7 @@ int main(){
                         double y_residue = d_y - y_finite_diff;
                         
                         //printf("%f,%f,%f,%f,%f,%f\n", x, y, d_x, d_y, x_finite_diff, x_residue);
-                        printf("%f,%f => %f,%f,%f => %f,%f,%f\n", x, y, d_x, x_finite_diff,x_residue, d_y, y_finite_diff,y_residue);
+                        printf("%f,%f,%f => %f,%f,%f => %f,%f,%f\n", x, y,value, d_x, x_finite_diff,x_residue, d_y, y_finite_diff,y_residue);
                 }
 
 
@@ -708,9 +708,24 @@ void black_scholes(){
         
         auto stmt_2 = std::make_shared<Statement>("stmt2", pv);
 
+        auto black = BinaryOperator::Sub(
+                BinaryOperator::Mul(
+                        Phi::Make(stmt_0),
+                        Symbol::Make("S")
+                ),
+                BinaryOperator::Mul(
+                        Phi::Make(stmt_1),
+                        stmt_2
+                )
+        );
+
+        auto stmt_3 = std::make_shared<Statement>("stmt3", black);
+
+
         f.AddStatement(stmt_0);
         f.AddStatement(stmt_1);
         f.AddStatement(stmt_2);
+        f.AddStatement(stmt_3);
 
         std::ofstream fstr("prog.cxx");
         fstr << R"(
@@ -756,5 +771,5 @@ int main(){
 }
 
 int main(){
-        example_0();
+        black_scholes();
 }
