@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <sstream>
+#include <fstream>
 #include <unordered_map>
 
 enum OperatorKind{
@@ -28,6 +29,12 @@ struct Operator : std::enable_shared_from_this<Operator>{
         #endif
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const=0;
         virtual void EmitCode(std::ostream& ss)const=0;
+        void Display(std::ostream& out = std::cout)const{
+                EmitCode(out);
+                out << "\n";
+        }
+
+
 private:
         OperatorKind kind_;
 };
@@ -252,11 +259,10 @@ struct Function{
 
                 ss << "double " << name_ << "(";
                 for(size_t idx=0;idx!=deps.size();++idx){
-                        if( idx != 0 )
-                                ss << ", ";
-                        ss << "double " << deps[idx].Name();
-                        ss << ", double " << deps[idx].DiffName();
+                        ss << "double " << deps[idx].Name() << ", ";
+                        ss << " double " << deps[idx].DiffName() << ", ";
                 }
+                ss << " double* diff";
 
                 ss << ")\n";
                 ss << "{\n";
@@ -276,6 +282,7 @@ struct Function{
                         //
 
                         auto const& stmt = stmts_[idx];
+                        auto const& expr = stmt->Expr();
 
                         std::vector<std::string> subs;
 
@@ -285,11 +292,11 @@ struct Function{
 
                                 // \partial stmt / \partial symbol d symbol
                                 auto sub_diff = BinaryOperator::Mul(
-                                        stmt->Diff( info.Name() ),
+                                        expr->Diff( info.Name() ),
                                         Symbol::Make(info.DiffName()));
 
                                 ss << indent << "// \\partial " << stmt->Name() << " / \\partial " << info.Name() << " d " << info.Name() << "\n";
-                                ss << indent << temp_name << " = ";
+                                ss << indent << "double " << temp_name << " = ";
                                 sub_diff->EmitCode(ss);
                                 ss << ";\n";
 
@@ -298,22 +305,22 @@ struct Function{
 
                         deps.emplace_back(stmt->Name());
 
-                        ss << indent << deps.back().Name() << " = ";
-                        stmt->EmitCode(ss);
+                        ss << indent << "double " << deps.back().Name() << " = ";
+                        expr->EmitCode(ss);
                         ss << ";\n";
 
 
-                        ss << indent << deps.back().DiffName() << " = ";
+                        ss << indent << "double " << deps.back().DiffName() << " = ";
                         for(size_t idx=0;idx!=subs.size();++idx){
                                 if( idx != 0 )
                                         ss << " + ";
                                 ss << subs[idx];
                         }
-                        ss << ";\n";
+                        ss << ";\n\n\n";
 
-                        
                 }
 
+                ss << indent << "*diff = " << deps.back().DiffName() << ";\n";
                 ss << indent << "return " << deps.back().Name() << ";\n";
                 ss << "}\n";
 
@@ -326,18 +333,52 @@ private:
 
 
 void example_0(){
+
+
         Function f("f");
         f.AddArgument("a");
         f.AddArgument("b");
         f.AddArgument("x");
 
+        auto expr_0 = BinaryOperator::Mul( Symbol::Make("a"), BinaryOperator::Mul(Symbol::Make("x"),  Symbol::Make("x")));
 
-        auto stmt_0 = std::make_shared<Statement>("stmt0", BinaryOperator::Mul( Symbol::Make("a"), Symbol::Make("x") ) );
-        auto stmt_1 = std::make_shared<Statement>("stmt1", BinaryOperator::Add( Symbol::Make(stmt_0->Name()), Symbol::Make("b")));
+
+        auto stmt_0 = std::make_shared<Statement>("stmt0", expr_0);
+
+        auto expr_1 = BinaryOperator::Add( Symbol::Make(stmt_0->Name()), Symbol::Make("b"));
+
+        auto stmt_1 = std::make_shared<Statement>("stmt1", expr_1);
         f.AddStatement(stmt_0);
         f.AddStatement(stmt_1);
 
-        f.Emit(std::cout);
+        std::ofstream fstr("prog.c");
+        f.Emit(fstr);
+        fstr << R"(
+#include <stdio.h>
+int main(){
+        double a = 2.0;
+        double b = 3.0;
+        double d_a = 0.0;
+        double d_b = 0.0;
+        double d_x = 0.05;
+        double epsilon = 1e-10;
+
+        for(double x =0.0; x <= 2.0 + d_x /2; x += d_x ){
+                double diff = 0.0;
+                double y = f(a, 0.0, b, 0.0, x, 1.0, &diff);
+
+                double dummy;
+                double lower = f(a, 0.0, b, 0.0, x - epsilon/2, 1.0, &dummy);
+                double upper = f(a, 0.0, b, 0.0, x + epsilon/2, 1.0, &dummy);
+                double finite_diff = ( upper - lower ) / epsilon;
+                
+                printf("%f,%f,%f,%f\n", x, y, diff, finite_diff);
+
+
+        }
+
+}
+)";
 
 }
 
