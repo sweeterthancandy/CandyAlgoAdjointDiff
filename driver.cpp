@@ -6,6 +6,8 @@
 #include <fstream>
 #include <unordered_map>
 
+#include <boost/optional.hpp>
+
 enum OperatorKind{
         OpKind_Unknown,
         OpKind_Statement,
@@ -240,29 +242,54 @@ struct Function{
 
         void Emit(std::ostream& ss)const{
 
+                // we have a vector [ x1, x2, ... ] which are the function 
+                // parameters. 
+
                 struct VariableInfo{
-                        VariableInfo(std::string const& name){
-                                name_      = name;
-                                diff_name_ = "__diff_" + name;
-                        }
+                        VariableInfo(std::string const& name)
+                                : name_{name}
+                        {}
                         std::string const& Name()const{ return name_; }
-                        std::string const& DiffName()const{ return diff_name_; }
+                        boost::optional<std::string const&> GetDiffLexical(std::string const& symbol)const{
+                                auto iter = diff_map_.find(symbol);
+                                if( iter == diff_map_.end() )
+                                        return {};
+                                return iter->second;
+                        }
+                        void MapDiff(std::string const& symbol, std::string const& name){
+                                diff_map_[symbol] = name;
+                        }
                 private:
                         std::string name_;
-                        std::string diff_name_;
+                        std::unordered_map<std::string, std::string> diff_map_;
                 };
 
-                std::vector<VariableInfo> deps;
+
+                auto to_diff = args_;
+
+
+                std::vector<std::shared_ptr<VariableInfo> > deps;
                 for( auto const& arg : args_ ){
-                        deps.emplace_back(arg);
+                        auto ptr = std::make_shared<VariableInfo>(arg);
+                        for( auto const& inner_arg : to_diff ){
+                                if( arg == inner_arg ){
+                                        ptr->MapDiff(inner_arg, "1.0");
+                                } else {
+                                        ptr->MapDiff(inner_arg, "0.0");
+                                }
+                        }
+                        deps.push_back(ptr);
                 }
+
+
 
                 ss << "double " << name_ << "(";
                 for(size_t idx=0;idx!=deps.size();++idx){
-                        ss << "double " << deps[idx].Name() << ", ";
-                        ss << " double " << deps[idx].DiffName() << ", ";
+                        if( idx != 0 ) 
+                                ss << ", ";
+                        ss << "double " << deps[idx]->Name();
+                        ss << ", double* " << "d_" + deps[idx]->Name();
                 }
-                ss << " double* diff";
 
                 ss << ")\n";
                 ss << "{\n";
@@ -275,7 +302,8 @@ struct Function{
                         // for each statement we need to add two calculations to the
                         // infomation
                         //      statement = expr
-                        //      d_statement = D(expr)
+                        //      for each X in to-diff:
+                        //        d_statement_X = D[X](expr)
                         //      
                         //    
 
@@ -283,45 +311,56 @@ struct Function{
 
                         auto const& stmt = stmts_[idx];
                         auto const& expr = stmt->Expr();
-
-                        std::vector<std::string> subs;
-
-                        for( auto const& info : deps ){
-
-                                auto temp_name = temp_alloc.Allocate();
-
-                                // \partial stmt / \partial symbol d symbol
-                                auto sub_diff = BinaryOperator::Mul(
-                                        expr->Diff( info.Name() ),
-                                        Symbol::Make(info.DiffName()));
-
-                                ss << indent << "// \\partial " << stmt->Name() << " / \\partial " << info.Name() << " d " << info.Name() << "\n";
-                                ss << indent << "double " << temp_name << " = ";
-                                sub_diff->EmitCode(ss);
-                                ss << ";\n";
-
-                                subs.push_back(temp_name);
-                        }
-
-                        deps.emplace_back(stmt->Name());
-
-                        ss << indent << "double " << deps.back().Name() << " = ";
+                        
+                        auto stmt_dep = std::make_shared<VariableInfo>(stmt->Name());
+                        
+                        ss << indent << "// expr\n";
+                        ss << indent << "double " << stmt_dep->Name() << " = ";
                         expr->EmitCode(ss);
                         ss << ";\n";
 
 
-                        ss << indent << "double " << deps.back().DiffName() << " = ";
-                        for(size_t idx=0;idx!=subs.size();++idx){
-                                if( idx != 0 )
-                                        ss << " + ";
-                                ss << subs[idx];
+                        for( auto const& d_symbol : to_diff ){
+                                std::vector<std::string> subs;
+
+                                for( auto const& info : deps ){
+
+                                        auto temp_name = temp_alloc.Allocate();
+
+                                         ;
+
+                                        // \partial stmt / \partial symbol d symbol
+                                        auto sub_diff = BinaryOperator::Mul(
+                                                expr->Diff( info->Name() ),
+                                                Symbol::Make(*info->GetDiffLexical(d_symbol)));
+
+                                        ss << indent << "// \\partial " << stmt->Name() << " / \\partial " << info->Name() << " d " << info->Name() << "\n";
+                                        ss << indent << "double " << temp_name << " = ";
+                                        sub_diff->EmitCode(ss);
+                                        ss << ";\n";
+
+                                        subs.push_back(temp_name);
+                                }
+
+
+                                std::string token = "__diff_" + stmt->Name() + "_" + d_symbol;
+                                stmt_dep->MapDiff( d_symbol, token);
+
+
+                                ss << indent << "double " << token << " = ";
+                                for(size_t idx=0;idx!=subs.size();++idx){
+                                        if( idx != 0 )
+                                                ss << " + ";
+                                        ss << subs[idx];
+                                }
+                                ss << ";\n";
                         }
-                        ss << ";\n\n\n";
+                        ss << "\n\n\n";
+                        deps.emplace_back(stmt_dep);
 
                 }
 
-                ss << indent << "*diff = " << deps.back().DiffName() << ";\n";
-                ss << indent << "return " << deps.back().Name() << ";\n";
+                ss << indent << "return " << deps.back()->Name() << ";\n";
                 ss << "}\n";
 
         }
@@ -331,8 +370,60 @@ private:
         std::vector<std::shared_ptr<Statement> > stmts_;
 };
 
-
 void example_0(){
+
+
+        Function f("f");
+        f.AddArgument("x");
+        f.AddArgument("y");
+
+        auto expr_0 = BinaryOperator::Mul( Symbol::Make("a"), BinaryOperator::Mul(Symbol::Make("x"),  Symbol::Make("x")));
+
+
+        auto stmt_0 = std::make_shared<Statement>("stmt0", expr_0);
+
+        auto expr_1 = BinaryOperator::Add( Symbol::Make(stmt_0->Name()), Symbol::Make("b"));
+
+        auto stmt_1 = std::make_shared<Statement>("stmt1", expr_1);
+        f.AddStatement(stmt_0);
+        f.AddStatement(stmt_1);
+
+        std::ofstream fstr("prog.c");
+        f.Emit(fstr);
+        fstr << R"(
+#include <stdio.h>
+int main(){
+        double a = 2.0;
+        double b = 3.0;
+
+        double epsilon = 1e-10;
+        double increment = 0.05;
+
+        
+
+        for(double x =0.0; x <= 2.0 + increment /2; x += increment ){
+                double d_a = 0.0;
+                double d_b = 0.0;
+                double d_x = 0.0;
+
+                double y = f(a, &d_a, b, &d_b, x, &d_x);
+
+                double dummy;
+                double lower = f(a, &dummy, b, &dummy, x - epsilon/2, &dummy);
+                double upper = f(a, &dummy, b, &dummy, x + epsilon/2, &dummy);
+                double finite_diff = ( upper - lower ) / epsilon;
+                double residue = d_x - finite_diff;
+                
+                printf("%f,%f,%f,%f,%f,%f,%f\n", x, y, d_a, d_b, d_x, finite_diff, residue);
+
+
+        }
+
+}
+)";
+}
+
+void example_1(){
 
 
         Function f("f");
@@ -358,28 +449,32 @@ void example_0(){
 int main(){
         double a = 2.0;
         double b = 3.0;
-        double d_a = 0.0;
-        double d_b = 0.0;
-        double d_x = 0.05;
-        double epsilon = 1e-10;
 
-        for(double x =0.0; x <= 2.0 + d_x /2; x += d_x ){
-                double diff = 0.0;
-                double y = f(a, 0.0, b, 0.0, x, 1.0, &diff);
+        double epsilon = 1e-10;
+        double increment = 0.05;
+
+        
+
+        for(double x =0.0; x <= 2.0 + increment /2; x += increment ){
+                double d_a = 0.0;
+                double d_b = 0.0;
+                double d_x = 0.0;
+
+                double y = f(a, &d_a, b, &d_b, x, &d_x);
 
                 double dummy;
-                double lower = f(a, 0.0, b, 0.0, x - epsilon/2, 1.0, &dummy);
-                double upper = f(a, 0.0, b, 0.0, x + epsilon/2, 1.0, &dummy);
+                double lower = f(a, &dummy, b, &dummy, x - epsilon/2, &dummy);
+                double upper = f(a, &dummy, b, &dummy, x + epsilon/2, &dummy);
                 double finite_diff = ( upper - lower ) / epsilon;
+                double residue = d_x - finite_diff;
                 
-                printf("%f,%f,%f,%f\n", x, y, diff, finite_diff);
+                printf("%f,%f,%f,%f,%f,%f,%f\n", x, y, d_a, d_b, d_x, finite_diff, residue);
 
 
         }
 
 }
 )";
-
 }
 
 
