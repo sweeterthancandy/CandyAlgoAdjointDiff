@@ -359,6 +359,10 @@ struct Function{
                         deps.emplace_back(stmt_dep);
 
                 }
+                        
+                for( auto const& d_symbol : to_diff ){
+                        ss << indent << "*d_" + d_symbol << " = " << *deps.back()->GetDiffLexical(d_symbol) << ";\n";
+                }
 
                 ss << indent << "return " << deps.back()->Name() << ";\n";
                 ss << "}\n";
@@ -377,44 +381,48 @@ void example_0(){
         f.AddArgument("x");
         f.AddArgument("y");
 
-        auto expr_0 = BinaryOperator::Mul( Symbol::Make("a"), BinaryOperator::Mul(Symbol::Make("x"),  Symbol::Make("x")));
-
+        auto expr_0 = BinaryOperator::Mul(BinaryOperator::Mul(Symbol::Make("x"),Symbol::Make("x")),  Symbol::Make("y"));
 
         auto stmt_0 = std::make_shared<Statement>("stmt0", expr_0);
 
-        auto expr_1 = BinaryOperator::Add( Symbol::Make(stmt_0->Name()), Symbol::Make("b"));
-
-        auto stmt_1 = std::make_shared<Statement>("stmt1", expr_1);
         f.AddStatement(stmt_0);
-        f.AddStatement(stmt_1);
 
         std::ofstream fstr("prog.c");
         f.Emit(fstr);
         fstr << R"(
 #include <stdio.h>
 int main(){
-        double a = 2.0;
-        double b = 3.0;
+        double x_min = -2.0;
+        double x_max = +2.0;
+        double y_min = -2.0;
+        double y_max = +2.0;
 
         double epsilon = 1e-10;
         double increment = 0.05;
 
         
 
-        for(double x =0.0; x <= 2.0 + increment /2; x += increment ){
-                double d_a = 0.0;
-                double d_b = 0.0;
-                double d_x = 0.0;
+        for(double x =x_min; x <= x_max + increment /2; x += increment ){
+                for(double y =y_min; y <= y_max + increment /2; y += increment ){
+                        double d_x = 0.0;
+                        double d_y = 0.0;
 
-                double y = f(a, &d_a, b, &d_b, x, &d_x);
+                        double value = f(x, &d_x, y, &d_y);
 
-                double dummy;
-                double lower = f(a, &dummy, b, &dummy, x - epsilon/2, &dummy);
-                double upper = f(a, &dummy, b, &dummy, x + epsilon/2, &dummy);
-                double finite_diff = ( upper - lower ) / epsilon;
-                double residue = d_x - finite_diff;
-                
-                printf("%f,%f,%f,%f,%f,%f,%f\n", x, y, d_a, d_b, d_x, finite_diff, residue);
+                        double dummy;
+                        double x_lower = f(x - epsilon /2 , &dummy, y, &dummy);
+                        double x_upper = f(x + epsilon /2 , &dummy, y, &dummy);
+                        double x_finite_diff = ( x_upper - x_lower ) / epsilon;
+                        double x_residue = d_x - x_finite_diff;
+                        
+                        double y_lower = f(x, &dummy, y - epsilon /2 , &dummy);
+                        double y_upper = f(x, &dummy, y + epsilon /2 , &dummy);
+                        double y_finite_diff = ( y_upper - y_lower ) / epsilon;
+                        double y_residue = d_y - y_finite_diff;
+                        
+                        //printf("%f,%f,%f,%f,%f,%f\n", x, y, d_x, d_y, x_finite_diff, x_residue);
+                        printf("%f,%f => %f,%f,%f => %f,%f,%f\n", x, y, d_x, x_finite_diff,x_residue, d_y, y_finite_diff,y_residue);
+                }
 
 
         }
@@ -479,5 +487,5 @@ int main(){
 
 
 int main(){
-        example_0();
+        example_1();
 }
