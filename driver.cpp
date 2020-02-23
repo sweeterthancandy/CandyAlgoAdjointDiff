@@ -676,6 +676,7 @@ struct RemapUnique{
 
                 std::stringstream ss;
                 ss << "__symbol_" << mapped_.size();
+                mapped_.insert(std::make_pair(key, NodeProfile{root}));
                 #if 0
                 auto endogous_sym = EndgenousSymbol::Make(ss.str(), root); 
                 mapped_.insert(std::make_pair(key, NodeProfile{endogous_sym}));
@@ -707,6 +708,11 @@ struct RemapUnique{
                 for(auto const& profile : profiles){
                         std::cout << std::setw(40) << profile->Op->NameInvariantOfChildren() <<  "=>" << profile->Count << "\n";
                         profile->Op->Display();
+                        std::stringstream ss;
+                        static size_t mutate_index = 0;
+                        ss << "__mutate_" << mutate_index;
+                        ++mutate_index;
+                        profile->Op->MutateToExogenous(ss.str());
                 }
 
         }
@@ -757,11 +763,15 @@ void black_scholes_template_opt(){
 
         remap_unique.Display();
 
+        unique->Display();
         unique->EmitCode(std::cout);
         std::cout << "\n";
         unique->Clone()->Clone()->Clone()->EmitCode(std::cout);
         std::cout << "\n";
 
+        unique->MutateToExogenous("hello");
+        unique->EmitCode(std::cout);
+        std::cout << "\n";
 
 
 }
