@@ -54,7 +54,7 @@ namespace std{
 } // end namespace std
 
 struct EndgenousSymbol;
-using  EndgenousSymbolSet = std::unordered_set<std::shared_ptr<EndgenousSymbol const> >;
+using  EndgenousSymbolSet = std::unordered_set<std::shared_ptr<EndgenousSymbol > >;
 struct Operator : std::enable_shared_from_this<Operator>{
 
         explicit Operator(std::string const& name, OperatorKind kind = OPKind_Other)
@@ -94,28 +94,39 @@ struct Operator : std::enable_shared_from_this<Operator>{
         bool IsNonTerminal()const{ return Arity() > 0; }
 
         std::string const& Name()const{ return name_; }
+        std::string NameWithHidden()const{
+                std::stringstream ss;
+                ss << name_ << "<" << this << ">" << "{";
+                auto hidden = HiddenArguments();
+                for(size_t idx=0;idx!=hidden.size();++idx){
+                        if( idx != 0 )
+                                ss << ", ";
+                        ss << hidden[idx];
+                }
+                ss << "}";
+                return ss.str();
+        }
 
         virtual std::vector<std::string> HiddenArguments()const{ return {}; }
 
-        inline void Display(std::ostream& ostr = std::cout)const;
+        inline void Display(std::ostream& ostr = std::cout);
 
-        EndgenousSymbolSet EndgenousDependencies()const{
+        EndgenousSymbolSet EndgenousDependencies(){
                 EndgenousSymbolSet mem;
                 EndgenousDependenciesCollect(mem);
                 return mem;
         }
-        virtual void EndgenousDependenciesCollect(EndgenousSymbolSet& mem)const{
-                std::vector<std::shared_ptr<Operator const> > stack{shared_from_this()};
+        virtual void EndgenousDependenciesCollect(EndgenousSymbolSet& mem){
+                std::vector<std::shared_ptr<Operator > > stack{shared_from_this()};
                 for(;stack.size();){
                         auto head = stack.back();
                         stack.pop_back();
-                        for(auto const& ptr : head->children_){
+                        std::cout << std::string(stack.size()*2, ' ') << head->NameWithHidden() << "\n";
+                        for(auto& ptr : head->children_){
                                 if( ptr->Kind() == OPKind_EndgenousSymbol){
                                         mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
                                 } else {
-                                        for(auto const& sub : ptr->Children() ){
-                                                stack.push_back(sub);
-                                        }
+                                        stack.push_back(ptr);
                                 }
                         }
                 }
@@ -232,7 +243,7 @@ private:
         std::string name_;
 };
         
-void Operator::Display(std::ostream& ostr)const{
+void Operator::Display(std::ostream& ostr){
 
         std::cout << "this->Name() => " << this->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,this->Name())
         for(auto const& ptr : EndgenousDependencies() ){
@@ -1657,27 +1668,25 @@ void black_scholes_template(){
         f.AddArgument("vol");
 
         using namespace Frontend;
-        auto black = f.AddStatement(Stmt("black", as_black));
-        black->Display();
-        std::cout << "black->Name() => " << black->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,black->Name())
 
-        std::unordered_set< std::shared_ptr<Operator const> > seen;
+        std::unordered_set< std::shared_ptr<Operator > > seen;
         struct StackFrame{
-                explicit StackFrame(std::shared_ptr<Operator const> op)
+                explicit StackFrame(std::shared_ptr<EndgenousSymbol > op)
                         : Op{op}
                 {
                         auto deps_set = Op->EndgenousDependencies();
                         Deps.assign(deps_set.begin(), deps_set.end());
                 }
-                std::shared_ptr<Operator const> Op;
-                std::vector<std::shared_ptr<EndgenousSymbol const> > Deps;
+                std::shared_ptr<EndgenousSymbol > Op;
+                std::vector<std::shared_ptr<EndgenousSymbol > > Deps;
         };
-        std::vector<StackFrame> stack{StackFrame{as_black.as_operator_()}};
+        std::vector<StackFrame> stack{StackFrame{std::reinterpret_pointer_cast<EndgenousSymbol>(as_black.as_operator_())}};
         for(size_t ttl=1000;stack.size() && ttl;--ttl){
                 auto& frame = stack.back();
                 if( frame.Deps.size() == 0 ){
                         if( seen.count(frame.Op) == 0 ){
                                 seen.insert(frame.Op);
+                                auto black = f.AddStatement(frame.Op);
                                 std::cout << "----------TERMINAL--------------\n";
                                 frame.Op->Display();
                         }
