@@ -61,7 +61,26 @@ using  EndgenousSymbolSet = std::unordered_set<std::shared_ptr<EndgenousSymbol >
 using  EndgenousSymbolVec = std::vector<std::shared_ptr<EndgenousSymbol > >;
 
 struct Operator;
+
 using OperatorVector = std::vector<std::shared_ptr<Operator> >;
+
+struct SymbolTable{
+        SymbolTable& operator()(std::string const& sym, double value){
+                m_[sym] = value;
+                return *this;
+        }
+        double operator[](std::string const& sym)const{
+                auto iter = m_.find(sym);
+                if( iter == m_.end()){
+                        std::stringstream ss;
+                        ss << "symbol " << sym << " does not exist";
+                        throw std::domain_error(ss.str());
+                }
+                return iter->second;
+        }
+private:
+        std::unordered_map<std::string, double> m_;
+};
 
 struct Operator : std::enable_shared_from_this<Operator>{
 
@@ -100,9 +119,7 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 }
         }
 
-        #if 0
         virtual double Eval(SymbolTable const& ST)const=0;
-        #endif
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const=0;
         virtual void EmitCode(std::ostream& ss)const=0;
         
@@ -199,11 +216,9 @@ struct Constant : Operator{
                 :Operator{"Constant", OPKind_Constant}
                 ,value_(value)
         {}
-        #if 0
-        virtual double Eval(SymbolTable const& ST)const{
+        virtual double Eval(SymbolTable const& ST)const override{
                 return value_;
         }
-        #endif
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
                 return Constant::Make(0.0);
         }
@@ -227,11 +242,9 @@ struct ExogenousSymbol : Operator{
                 ,name_(name)
         {}
         virtual std::vector<std::string> HiddenArguments()const override{ return {name_}; }
-        #if 0
-        virtual double Eval(SymbolTable const& ST)const{
-                return ST.Lookup(name_);
+        virtual double Eval(SymbolTable const& ST)const override{
+                return ST[name_];
         }
-        #endif
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
                 if( symbol == name_ ){
                         return Constant::Make(1.0);
@@ -284,11 +297,9 @@ struct EndgenousSymbol : Operator{
         std::shared_ptr<Operator> Expr()const{ return At(0); }
         std::shared_ptr<Operator> as_operator_()const{ return At(0); }
         
-        #if 0
-        virtual void EndgenousDependenciesCollect(EndgenousSymbolSet& mem)const{
-                mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol const>(shared_from_this()));
+        virtual double Eval(SymbolTable const& ST)const override{
+                return At(0)->Eval(ST);
         }
-        #endif
         
         virtual std::shared_ptr<Operator> Clone()const override{ return Make(endo_name_, At(0)); }
 #if 0
@@ -398,9 +409,6 @@ struct UnaryOperator : Operator{
                 return std::make_shared<UnaryOperator>(UOP_USUB, arg);
         }
 
-
-
-
         virtual void EmitCode(std::ostream& ss)const override{
                 ss << "(-(";
                 At(0)->EmitCode(ss);
@@ -411,6 +419,9 @@ struct UnaryOperator : Operator{
                         op_,
                         At(0)
                 );
+        }
+        virtual double Eval(SymbolTable const& ST)const override{
+                return -At(0)->Eval(ST);
         }
 
 
@@ -462,29 +473,31 @@ struct BinaryOperator : Operator{
         }
         std::shared_ptr<Operator> LParam()const{ return At(0); }
         std::shared_ptr<Operator> RParam()const{ return At(1); }
-        #if 0
-        virtual double Eval(SymbolTable const& ST)const{
+        virtual double Eval(SymbolTable const& ST)const override{
                 switch(op_)
                 {
                 case OP_ADD:
                         {
-                                return left_->Eval(ST) + RParam()->Eval(ST);
+                                return At(0)->Eval(ST) + At(1)->Eval(ST);
                         }
                 case OP_SUB:
                         {
-                                return left_->Eval(ST) - RParam()->Eval(ST);
+                                return At(0)->Eval(ST) - At(1)->Eval(ST);
                         }
                 case OP_MUL:
                         {
-                                return left_->Eval(ST) * RParam()->Eval(ST);
+                                return At(0)->Eval(ST) * At(1)->Eval(ST);
                         }
                 case OP_DIV:
                         {
-                                return left_->Eval(ST) / RParam()->Eval(ST);
+                                return At(0)->Eval(ST) / At(1)->Eval(ST);
+                        }
+                case OP_POW:
+                        {
+                                return std::pow(At(0)->Eval(ST),At(1)->Eval(ST));
                         }
                 }
         }
-        #endif
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override
         {
                 switch(op_)
@@ -641,6 +654,9 @@ struct Exp : Operator{
         virtual std::shared_ptr<Operator> Clone()const override{
                 return Make(At(0));
         }
+        virtual double Eval(SymbolTable const& ST)const override{
+                return std::exp(At(0)->Eval(ST));
+        }
 };
 
 struct Log : Operator{
@@ -664,6 +680,9 @@ struct Log : Operator{
         }
         virtual std::shared_ptr<Operator> Clone()const override{
                 return Make(At(0));
+        }
+        virtual double Eval(SymbolTable const& ST)const override{
+                return std::log(At(0)->Eval(ST));
         }
 };
 
@@ -704,6 +723,9 @@ struct Phi : Operator{
                 ss << "std::erfc(-(";
                 At(0)->EmitCode(ss);
                 ss << ")/std::sqrt(2))/2";
+        }
+        virtual double Eval(SymbolTable const& ST)const override{
+                return std::erfc(-At(0)->Eval(ST)/std::sqrt(2))/2;
         }
 
         static std::shared_ptr<Operator> Make(std::shared_ptr<Operator> const& arg){

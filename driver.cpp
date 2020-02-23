@@ -772,6 +772,14 @@ void black_scholes_template_opt(){
                 DoubleKernel::BuildFromExo("vol")
         );
 
+        SymbolTable ST;
+        ST("t"  , 0.0);
+        ST("T"  , 10.0);
+        ST("r"  , 0.04);
+        ST("S"  , 50);
+        ST("K"  , 60);
+        ST("vol", 0.2);
+
         RemoveEndgenousFolder remove_endogous;
         RemapUnique remap_unique;
         Transform::FoldZero constant_fold;
@@ -779,21 +787,22 @@ void black_scholes_template_opt(){
         auto black_expr = as_black.as_operator_();
 
         std::cout << "--------- black_expr -----------\n";
-        black_expr->Display();
+        //black_expr->Display();
+        std::cout << "black_expr->Eval(ST) => " << black_expr->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,black_expr->Eval(ST))
 
         auto removed_endo = remove_endogous.Fold(black_expr);
         std::cout << "--------- removed_endo -----------\n";
-        removed_endo->Display();
+        std::cout << "removed_endo->Eval(ST) => " << removed_endo->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,removed_endo->Eval(ST))
 
         std::vector<std::shared_ptr<Operator> > d;
         for(auto const& s : { "t", "T", "r", "S", "K", "vol" }){
                 auto raw_diff = removed_endo->Diff(s);
                 std::cout << "--------- raw_diff " << s << " -----------\n";
-                //raw_diff->Display();
+                std::cout << "raw_diff->Eval(ST) => " << raw_diff->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,raw_diff->Eval(ST))
 
                 auto const_folded = constant_fold.Fold(raw_diff);
                 std::cerr << __FILE__ << ":" << __LINE__ << ":B\n"; // __CandyTag__B
-                //const_folded->Display();
+                std::cout << "const_folded->Eval(ST) => " << const_folded->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,const_folded->Eval(ST))
 
                 const_folded->EmitCode(std::cout);
                 std::cout << "\n";
