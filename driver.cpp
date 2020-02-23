@@ -1620,8 +1620,8 @@ struct DoubleKernel : Frontend::ImbueWith{
         DoubleKernel( Dispatch_Exo&&, std::shared_ptr<Operator> const& op)
                 : impl_{std::make_shared<DoubleKernelOperator>(op)}
         {}
-        static DoubleKernel BuildFromExo(std::shared_ptr<Operator> const& op){
-                return DoubleKernel(Dispatch_Exo{}, op); 
+        static DoubleKernel BuildFromExo(std::string const& name){
+                return DoubleKernel(Dispatch_Exo{}, std::make_shared<ExogenousSymbol>(name)); 
         }
         std::shared_ptr<Operator> as_operator_()const{
                 return impl_->as_operator_();
@@ -1647,12 +1647,12 @@ void black_scholes_template(){
         auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
 
         auto as_black = ad_kernel.Evaluate( 
-                Frontend::Double("t"),
-                Frontend::Double("T"),
-                Frontend::Double("r"),
-                Frontend::Double("S"),
-                Frontend::Double("K"),
-                Frontend::Double("vol")
+                DoubleKernel::BuildFromExo("t"),
+                DoubleKernel::BuildFromExo("T"),
+                DoubleKernel::BuildFromExo("r"),
+                DoubleKernel::BuildFromExo("S"),
+                DoubleKernel::BuildFromExo("K"),
+                DoubleKernel::BuildFromExo("vol")
         );
 
         std::cerr << __FILE__ << ":" << __LINE__ << ":A\n"; // __CandyTag__A
