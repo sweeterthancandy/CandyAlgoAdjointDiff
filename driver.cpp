@@ -758,6 +758,9 @@ void black_scholes_template_opt(){
         remap_unique.Display();
 
         unique->EmitCode(std::cout);
+        std::cout << "\n";
+        unique->Clone()->Clone()->Clone()->EmitCode(std::cout);
+        std::cout << "\n";
 
 
 

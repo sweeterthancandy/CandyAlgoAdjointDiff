@@ -68,8 +68,10 @@ struct Operator : std::enable_shared_from_this<Operator>{
 
         OperatorKind Kind()const{ return kind_; }
 
+        inline void MutateToExogenous(std::string const& name);
 
 
+        virtual std::shared_ptr<Operator> Clone()const=0;
 
         #if 0
         virtual double Eval(SymbolTable const& ST)const=0;
@@ -155,7 +157,7 @@ protected:
                 return slot;
         }
 
-        std::string exo_name_;
+        std::string endo_name_;
 private:
         std::string name_;
         std::vector<std::shared_ptr<Operator> > children_;
@@ -175,18 +177,19 @@ struct Constant : Operator{
                 return value_;
         }
         #endif
-        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
                 return Constant::Make(0.0);
         }
-        virtual void EmitCode(std::ostream& ss)const{
+        virtual void EmitCode(std::ostream& ss)const override{
                 ss << value_;
         }
 
         static std::shared_ptr<Operator> Make(double value){
                 return std::make_shared<Constant>(value);
         }
-        virtual std::vector<std::string> HiddenArguments()const{ return { std::to_string(value_) }; }
+        virtual std::vector<std::string> HiddenArguments()const override{ return { std::to_string(value_) }; }
         double Value()const{ return value_; }
+        virtual std::shared_ptr<Operator> Clone()const override{ return Make(value_); }
 private:
         double value_;
 };
@@ -196,19 +199,19 @@ struct ExogenousSymbol : Operator{
                 :Operator{"ExogenousSymbol", OPKind_ExogenousSymbol}
                 ,name_(name)
         {}
-        virtual std::vector<std::string> HiddenArguments()const{ return {name_}; }
+        virtual std::vector<std::string> HiddenArguments()const override{ return {name_}; }
         #if 0
         virtual double Eval(SymbolTable const& ST)const{
                 return ST.Lookup(name_);
         }
         #endif
-        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
                 if( symbol == name_ ){
                         return Constant::Make(1.0);
                 }
                 return Constant::Make(0.0);
         }
-        virtual void EmitCode(std::ostream& ss)const{
+        virtual void EmitCode(std::ostream& ss)const override{
                 ss << name_;
         }
         std::string const& Name()const{ return name_; }
@@ -216,6 +219,7 @@ struct ExogenousSymbol : Operator{
         static std::shared_ptr<ExogenousSymbol> Make(std::string const& symbol){
                 return std::make_shared<ExogenousSymbol>(symbol);
         }
+        virtual std::shared_ptr<Operator> Clone()const override{ return Make(name_); }
 private:
         std::string name_;
 };
@@ -232,19 +236,19 @@ struct EndgenousSymbol : Operator{
                 :Operator{"EndgenousSymbol", OPKind_EndgenousSymbol}
         {
                 Push(expr);
-                exo_name_ = name;
+                endo_name_ = name;
         }
-        virtual std::vector<std::string> HiddenArguments()const{ return {exo_name_, "<expr>"}; }
-        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
-                if( symbol == exo_name_ ){
+        virtual std::vector<std::string> HiddenArguments()const override{ return {endo_name_, "<expr>"}; }
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
+                if( symbol == endo_name_ ){
                         return Constant::Make(1.0);
                 }
                 return Constant::Make(0.0);
         }
-        virtual void EmitCode(std::ostream& ss)const{
-                ss << exo_name_;
+        virtual void EmitCode(std::ostream& ss)const override{
+                ss << endo_name_;
         }
-        std::string const& Name()const{ return exo_name_; }
+        std::string const& Name()const{ return endo_name_; }
         
         static std::shared_ptr<EndgenousSymbol> Make(std::string const& symbol, std::shared_ptr<Operator> const& expr){
                 return std::make_shared<EndgenousSymbol>(symbol, expr);
@@ -258,6 +262,8 @@ struct EndgenousSymbol : Operator{
                 mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol const>(shared_from_this()));
         }
         #endif
+        
+        virtual std::shared_ptr<Operator> Clone()const override{ return Make(endo_name_, At(0)); }
 #if 0
 private:
         std::string name_;
@@ -373,6 +379,13 @@ struct UnaryOperator : Operator{
                 At(0)->EmitCode(ss);
                 ss << "))";
         }
+        virtual std::shared_ptr<Operator> Clone()const override{
+                return std::make_shared<UnaryOperator>(
+                        op_,
+                        At(0)
+                );
+        }
+
 
 
 private:
@@ -568,6 +581,13 @@ struct BinaryOperator : Operator{
                 return std::make_shared<BinaryOperator>(OP_POW, left, right);
         }
 
+        virtual std::shared_ptr<Operator> Clone()const override{
+                return std::make_shared<BinaryOperator>(
+                        op_,
+                        At(0),
+                        At(1)
+                );
+        }
 private:
         BinaryOperatorKind op_;
 };
@@ -578,18 +598,21 @@ struct Exp : Operator{
         {
                 Push(arg);
         }
-        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
                 return BinaryOperator::Mul(
                         std::make_shared<Exp>(At(0)),
                         At(0)->Diff(symbol));
         }
-        virtual void EmitCode(std::ostream& ss)const{
+        virtual void EmitCode(std::ostream& ss)const override{
                 ss << "std::exp(";
                 At(0)->EmitCode(ss);
                 ss << ")";
         }
         static std::shared_ptr<Exp> Make(std::shared_ptr<Operator> const& arg){
                 return std::make_shared<Exp>(arg);
+        }
+        virtual std::shared_ptr<Operator> Clone()const override{
+                return Make(At(0));
         }
 };
 
@@ -599,18 +622,21 @@ struct Log : Operator{
         {
                 Push(arg);
         }
-        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
                 return BinaryOperator::Div(
                         At(0)->Diff(symbol),
                         At(0));
         }
-        virtual void EmitCode(std::ostream& ss)const{
+        virtual void EmitCode(std::ostream& ss)const override{
                 ss << "std::log(";
                 At(0)->EmitCode(ss);
                 ss << ")";
         }
         static std::shared_ptr<Log> Make(std::shared_ptr<Operator> const& arg){
                 return std::make_shared<Log>(arg);
+        }
+        virtual std::shared_ptr<Operator> Clone()const override{
+                return Make(At(0));
         }
 };
 
@@ -622,7 +648,7 @@ struct Phi : Operator{
         {
                 Push(arg);
         }
-        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
                 // f(x) = 1/\sqrt{2 \pi} \exp{-\frac{1}{2}x^2}
 
                 return 
@@ -646,7 +672,7 @@ struct Phi : Operator{
                         );
 
         }
-        virtual void EmitCode(std::ostream& ss)const{
+        virtual void EmitCode(std::ostream& ss)const override{
                 // std::erfc(-x/std::sqrt(2))/2
                 ss << "std::erfc(-(";
                 At(0)->EmitCode(ss);
@@ -655,6 +681,9 @@ struct Phi : Operator{
 
         static std::shared_ptr<Operator> Make(std::shared_ptr<Operator> const& arg){
                 return std::make_shared<Phi>(arg);
+        }
+        virtual std::shared_ptr<Operator> Clone()const override{
+                return Make(At(0));
         }
 };
 
@@ -723,6 +752,11 @@ private:
 };
 
 
+inline void Operator::MutateToExogenous(std::string const& name){
+        auto clone = this->Clone();
+        this->~Operator();
+        new(this)EndgenousSymbol(name, clone);
+}
 
 
 
