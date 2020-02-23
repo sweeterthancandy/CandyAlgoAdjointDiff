@@ -5,11 +5,11 @@
 #include <sstream>
 #include <fstream>
 #include <unordered_map>
+#include <unordered_set>
 #include <type_traits>
 
 #include <boost/optional.hpp>
 #include <boost/variant.hpp>
-#
 
 
 #if 0
@@ -19,13 +19,42 @@ private:
 };
 #endif
 
+/* 
+                                Ideas
+                                =====
+        1) We could do something where look for common subtrees with a metric
+           induced by assigning weights to nodes, IE div is 50, plus is 1, 
+           Phi is 1000. Then we could count all subtrees
+                        root = external-root
+                        for(;;){
+                                compute a statistic of counts of common subtrees
+                                take the largest neaive saving, with is ( count -1 ) * metric,
+                                if the subtree is not above a threshold
+                                        break
+                                and replace all instanace
+                        }
+*/
+
 enum OperatorKind{
         OPKind_UnaryOperator,
         OPKind_BinaryOperator,
         OPKind_Constant,
+        OPKind_ExogenousSymbol,
+        OPKind_EndgenousSymbol,
         OPKind_Other,
 };
 
+namespace std{
+        template< class T, class U > 
+        std::shared_ptr<T> reinterpret_pointer_cast( const std::shared_ptr<U>& r ) noexcept
+        {
+                    auto p = reinterpret_cast<typename std::shared_ptr<T>::element_type*>(r.get());
+                        return std::shared_ptr<T>(r, p);
+        }
+} // end namespace std
+
+struct EndgenousSymbol;
+using  EndgenousSymbolSet = std::unordered_set<std::shared_ptr<EndgenousSymbol const> >;
 struct Operator : std::enable_shared_from_this<Operator>{
 
         explicit Operator(std::string const& name, OperatorKind kind = OPKind_Other)
@@ -139,6 +168,19 @@ struct Operator : std::enable_shared_from_this<Operator>{
                         }
                 }
         }
+
+        EndgenousSymbolSet EndgenousDependencies()const{
+                EndgenousSymbolSet mem;
+                EndgenousDependenciesCollect(mem);
+                return mem;
+        }
+        virtual void EndgenousDependenciesCollect(EndgenousSymbolSet& mem)const{
+                for(auto const& ptr : children_){
+                        if( ptr->Kind() == OPKind_EndgenousSymbol){
+                                mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
+                        }
+                }
+        }
 protected:
         size_t Push(std::shared_ptr<Operator> const& ptr){
                 size_t slot = children_.size();
@@ -180,9 +222,9 @@ private:
         double value_;
 };
 
-struct Symbol : Operator{
-        Symbol(std::string const& name)
-                :Operator{"Symbol"}
+struct ExogenousSymbol : Operator{
+        ExogenousSymbol(std::string const& name)
+                :Operator{"ExogenousSymbol", OPKind_ExogenousSymbol}
                 ,name_(name)
         {}
         virtual std::vector<std::string> HiddenArguments()const{ return {name_}; }
@@ -202,11 +244,51 @@ struct Symbol : Operator{
         }
         std::string const& Name()const{ return name_; }
         
-        static std::shared_ptr<Symbol> Make(std::string const& symbol){
-                return std::make_shared<Symbol>(symbol);
+        static std::shared_ptr<ExogenousSymbol> Make(std::string const& symbol){
+                return std::make_shared<ExogenousSymbol>(symbol);
         }
 private:
         std::string name_;
+};
+/*
+        I want a mechinism for follow statements.
+        there are two cases, a symbol which represents
+        something exogenous, and the case we we are
+        splitting a 
+
+ */
+struct EndgenousSymbol : Operator{
+        EndgenousSymbol(std::string const& name,
+                        std::shared_ptr<Operator> const& expr)
+                :Operator{"EndgenousSymbol", OPKind_EndgenousSymbol}
+                ,name_{name}
+                ,expr_{expr}
+        {}
+        virtual std::vector<std::string> HiddenArguments()const{ return {name_, "<expr>"}; }
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
+                if( symbol == name_ ){
+                        return Constant::Make(1.0);
+                }
+                return Constant::Make(0.0);
+        }
+        virtual void EmitCode(std::ostream& ss)const{
+                ss << name_;
+        }
+        std::string const& Name()const{ return name_; }
+        
+        static std::shared_ptr<EndgenousSymbol> Make(std::string const& symbol, std::shared_ptr<Operator> const& expr){
+                return std::make_shared<EndgenousSymbol>(symbol, expr);
+        }
+
+        std::shared_ptr<Operator> Expr()const{ return expr_; }
+        std::shared_ptr<Operator> as_operator_()const{ return expr_; }
+        
+        virtual void EndgenousDependenciesCollect(EndgenousSymbolSet& mem)const{
+                mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol const>(shared_from_this()));
+        }
+private:
+        std::string name_;
+        std::shared_ptr<Operator> expr_;
 };
 
 enum UnaryOperatorKind{
@@ -524,9 +606,10 @@ struct Phi : Operator{
         }
 };
 
-struct Statement : Symbol{
+#if 0
+struct Statement : EndgenousSymbol{
         Statement(std::string const& name, std::shared_ptr<Operator> expr)
-                :Symbol(name),
+                :ExogenousSymbol(name),
                 expr_(expr)
         {}
         std::shared_ptr<Operator> Expr()const{ return expr_; }
@@ -535,6 +618,7 @@ private:
         std::string name_;
         std::shared_ptr<Operator> expr_;
 };
+#endif
 
 struct TemporaryAllocator{
         std::string Allocate(){
@@ -553,7 +637,7 @@ struct Function{
         void AddArgument(std::string const& symbol){
                 args_.push_back(symbol);
         }
-        auto AddStatement(std::shared_ptr<Statement> stmt){
+        auto AddStatement(std::shared_ptr<EndgenousSymbol> stmt){
                 stmts_.push_back(stmt);
                 return stmt;
         }
@@ -564,7 +648,7 @@ struct Function{
 private:
         std::string name_;
         std::vector<std::string> args_;
-        std::vector<std::shared_ptr<Statement> > stmts_;
+        std::vector<std::shared_ptr<EndgenousSymbol> > stmts_;
 };
 
 struct ConstantDescription{
@@ -841,7 +925,7 @@ struct StringCodeGenerator{
 
 
                                 std::string token = "__diff_" + stmt->Name() + "_" + d_symbol;
-                                stmt_dep->MapDiff( d_symbol, Symbol::Make(token));
+                                stmt_dep->MapDiff( d_symbol, ExogenousSymbol::Make(token));
 
 
                                 ss << indent << "double " << token << " = ";
@@ -862,7 +946,7 @@ struct StringCodeGenerator{
                 }
                         
                 for( auto const& d_symbol : to_diff ){
-                        ss << indent << "*d_" + d_symbol << " = " << reinterpret_cast<Symbol*>(deps.back()->GetDiffLexical(d_symbol).get().get())->Name() << ";\n";
+                        ss << indent << "*d_" + d_symbol << " = " << reinterpret_cast<ExogenousSymbol*>(deps.back()->GetDiffLexical(d_symbol).get().get())->Name() << ";\n";
                 }
 
                 ss << indent << "return " << deps.back()->Name() << ";\n";
@@ -878,11 +962,11 @@ void example_0(){
         f.AddArgument("x");
         f.AddArgument("y");
 
-        //auto expr_0 = BinaryOperator::Mul(Log::Make(BinaryOperator::Mul(Symbol::Make("x"),Symbol::Make("x"))),  Exp::Make(Symbol::Make("y")));
-        //auto expr_0 = BinaryOperator::Pow(Symbol::Make("x"), Constant::Make(2));
-        auto expr_0 = Phi::Make(BinaryOperator::Pow(Symbol::Make("x"), Constant::Make(3)));
+        //auto expr_0 = BinaryOperator::Mul(Log::Make(BinaryOperator::Mul(ExogenousSymbol::Make("x"),ExogenousSymbol::Make("x"))),  Exp::Make(ExogenousSymbol::Make("y")));
+        //auto expr_0 = BinaryOperator::Pow(ExogenousSymbol::Make("x"), Constant::Make(2));
+        auto expr_0 = Phi::Make(BinaryOperator::Pow(ExogenousSymbol::Make("x"), Constant::Make(3)));
 
-        auto stmt_0 = std::make_shared<Statement>("stmt0", expr_0);
+        auto stmt_0 = std::make_shared<EndgenousSymbol>("stmt0", expr_0);
 
         f.AddStatement(stmt_0);
 
@@ -938,6 +1022,8 @@ int main(){
 
 namespace Frontend{
 
+        struct ImbueWith{};
+
         struct WithOperators{
                 WithOperators(std::shared_ptr<Operator> impl)
                         :impl_(impl)
@@ -967,7 +1053,7 @@ namespace Frontend{
                         >
                 >
                 std::shared_ptr<Operator> AsOperatorImpl(T&& t, PrecedenceDevice<7>&&){
-                        return Symbol::Make(t);
+                        return ExogenousSymbol::Make(t);
                 }
                 template<
                         class T,
@@ -1058,7 +1144,7 @@ namespace Frontend{
         }
 
         inline auto Var(std::string const& name){
-                return WithOperators{Symbol::Make(name)};
+                return WithOperators{ExogenousSymbol::Make(name)};
         }
         template<class T>
         inline auto Log(T&& arg){
@@ -1083,7 +1169,7 @@ namespace Frontend{
 
         template<class Arg>
         inline auto Stmt(std::string const& name, Arg&& arg){
-                auto ptr = std::make_shared<Statement>(name, AsOperator(arg));
+                auto ptr = std::make_shared<EndgenousSymbol>(name, AsOperator(arg));
                 return ptr;
         }
 
@@ -1098,7 +1184,7 @@ namespace Frontend{
         #if 0
         struct Var{
                 Var(std::string const& name):
-                        impl_{Symbol::Make(name)}
+                        impl_{ExogenousSymbol::Make(name)}
                 {}
                 std::shared_ptr<Operator> as_operator_()const{
                         return impl_;
@@ -1120,14 +1206,14 @@ void example_1(){
         f.AddArgument("x");
 
 
-        auto expr_0 = BinaryOperator::Mul( Symbol::Make("a"), BinaryOperator::Mul(Symbol::Make("x"),  Symbol::Make("x")));
+        auto expr_0 = BinaryOperator::Mul( ExogenousSymbol::Make("a"), BinaryOperator::Mul(ExogenousSymbol::Make("x"),  ExogenousSymbol::Make("x")));
 
 
-        auto stmt_0 = std::make_shared<Statement>("stmt0", expr_0);
+        auto stmt_0 = std::make_shared<EndgenousSymbol>("stmt0", expr_0);
 
-        auto expr_1 = BinaryOperator::Add( Symbol::Make(stmt_0->Name()), Symbol::Make("b"));
+        auto expr_1 = BinaryOperator::Add( ExogenousSymbol::Make(stmt_0->Name()), ExogenousSymbol::Make("b"));
 
-        auto stmt_1 = std::make_shared<Statement>("stmt1", expr_1);
+        auto stmt_1 = std::make_shared<EndgenousSymbol>("stmt1", expr_1);
         f.AddStatement(stmt_0);
         f.AddStatement(stmt_1);
 
@@ -1179,14 +1265,14 @@ void black_scholes(){
         f.AddArgument("vol");
 
         auto time_to_expiry = BinaryOperator::Sub(
-                Symbol::Make("T"),
-                Symbol::Make("t")
+                ExogenousSymbol::Make("T"),
+                ExogenousSymbol::Make("t")
         );
 
         auto deno = BinaryOperator::Div( 
                 Constant::Make(1.0),
                 BinaryOperator::Mul(
-                        Symbol::Make("vol"),
+                        ExogenousSymbol::Make("vol"),
                         BinaryOperator::Pow(
                                 time_to_expiry,
                                 Constant::Make(0.5)
@@ -1199,16 +1285,16 @@ void black_scholes(){
                 BinaryOperator::Add(
                         Log::Make(
                                 BinaryOperator::Div(
-                                        Symbol::Make("S"),
-                                        Symbol::Make("K")
+                                        ExogenousSymbol::Make("S"),
+                                        ExogenousSymbol::Make("K")
                                 )
                         ),
                         BinaryOperator::Mul(
                                 BinaryOperator::Add(
-                                        Symbol::Make("r"),
+                                        ExogenousSymbol::Make("r"),
                                         BinaryOperator::Div(
                                                 BinaryOperator::Pow(
-                                                        Symbol::Make("vol"),
+                                                        ExogenousSymbol::Make("vol"),
                                                         Constant::Make(2.0)
                                                 ),
                                                 Constant::Make(2.0)
@@ -1219,39 +1305,39 @@ void black_scholes(){
                 )
         );
 
-        auto stmt_0 = std::make_shared<Statement>("stmt0", d1);
+        auto stmt_0 = std::make_shared<EndgenousSymbol>("stmt0", d1);
 
         
         auto d2 = BinaryOperator::Sub(
-                Symbol::Make(stmt_0->Name()),
+                ExogenousSymbol::Make(stmt_0->Name()),
                 BinaryOperator::Mul(
-                        Symbol::Make("vol"),
+                        ExogenousSymbol::Make("vol"),
                         time_to_expiry
                 )
         );
 
 
-        auto stmt_1 = std::make_shared<Statement>("stmt1", d2);
+        auto stmt_1 = std::make_shared<EndgenousSymbol>("stmt1", d2);
         
         auto pv = BinaryOperator::Mul(
-                Symbol::Make("K"),
+                ExogenousSymbol::Make("K"),
                 Exp::Make(
                         BinaryOperator::Mul(
                                 BinaryOperator::Sub(
                                         Constant::Make(0.0),
-                                        Symbol::Make("r")
+                                        ExogenousSymbol::Make("r")
                                 ),
                                 time_to_expiry
                         )
                 )
         );
         
-        auto stmt_2 = std::make_shared<Statement>("stmt2", pv);
+        auto stmt_2 = std::make_shared<EndgenousSymbol>("stmt2", pv);
 
         auto black = BinaryOperator::Sub(
                 BinaryOperator::Mul(
                         Phi::Make(stmt_0),
-                        Symbol::Make("S")
+                        ExogenousSymbol::Make("S")
                 ),
                 BinaryOperator::Mul(
                         Phi::Make(stmt_1),
@@ -1259,7 +1345,7 @@ void black_scholes(){
                 )
         );
 
-        auto stmt_3 = std::make_shared<Statement>("stmt3", black);
+        auto stmt_3 = std::make_shared<EndgenousSymbol>("stmt3", black);
 
 
         f.AddStatement(stmt_0);
@@ -1464,6 +1550,57 @@ struct BlackScholesCallOption{
         };
 };
 
+
+/*
+        Here we want to make a massive distincition between lvalue and rvalue
+
+        each lvalue is single assignment, and maps to statements in the code,
+        the idea is that we might have something like this
+
+                a = f(x,y,z)
+                b = a * ( a - 1 ) * (a -2 ) * ( a -3 )
+
+        mathematically, the above is nothing more than the expanded expression,
+        however we want to allow the creation of statements. 
+ */
+struct DoubleKernelImpl{
+        virtual ~DoubleKernelImpl()=default;
+        virtual std::shared_ptr<Operator> as_operator_()const=0;
+};
+struct DoubleKernelOperator : DoubleKernelImpl{
+        DoubleKernelOperator(std::shared_ptr<Operator> ptr)
+                :operator_(ptr)
+        {}
+        virtual std::shared_ptr<Operator> as_operator_()const{ return operator_; }
+private:
+        std::shared_ptr<Operator> operator_;
+};
+struct DoubleKernel : Frontend::ImbueWith{
+        static std::string Tag(){
+                static size_t counter = 0;
+                std::stringstream ss;
+                ss << "__statement_" << counter;
+                ++counter;
+                return ss.str();
+        }
+        template< class Expr >
+        DoubleKernel(Expr&& expr)
+                : impl_{std::make_shared<DoubleKernelOperator>(EndgenousSymbol::Make(Tag(), AsOperadasdor(expr)))}
+        {}
+        struct Dispatch_Exo{};
+        DoubleKernel( Dispatch_Exo&&, std::shared_ptr<Operator> const& op)
+                : impl_{std::make_shared<DoubleKernelOperator>(op)}
+        {}
+        static DoubleKernel BuildFromExo(std::shared_ptr<Operator> const& op){
+                return DoubleKernel(Dispatch_Exo{}, op); 
+        }
+        std::shared_ptr<Operator> as_operator_()const{
+                return impl_->as_operator_();
+        }
+private:
+        std::shared_ptr<DoubleKernelImpl> impl_;
+};
+
 void black_scholes_template(){
         auto black_eval = BlackScholesCallOption::Build<double>{};
 
@@ -1478,7 +1615,7 @@ void black_scholes_template(){
 
 
         
-        auto ad_kernel = BlackScholesCallOption::Build<Frontend::Double>{};
+        auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
 
         auto as_black = ad_kernel.Evaluate( 
                 Frontend::Double("t"),
@@ -1501,6 +1638,11 @@ void black_scholes_template(){
 
         using namespace Frontend;
         auto black = f.AddStatement(Stmt("black", as_black));
+
+        for(auto const& ptr : black->EndgenousDependencies() ){
+                std::cout << "ptr->Name() => " << ptr->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,ptr->Name())
+        }
+
 
         std::ofstream fstr("prog.cxx");
         fstr << R"(
