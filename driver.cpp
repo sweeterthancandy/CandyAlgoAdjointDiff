@@ -624,6 +624,157 @@ int main(){
 
 
 
+
+void black_scholes_template_opt(){
+        auto black_eval = BlackScholesCallOption::Build<double>{};
+
+        double t   = 0.0;
+        double T   = 10.0;
+        double r   = 0.04;
+        double S   = 50;
+        double K   = 60;
+        double vol = 0.2;
+
+        std::cout << "black_eval(t,T,r,S,K,vol) => " << black_eval.Evaluate(t,T,r,S,K,vol) << "\n"; // __CandyPrint__(cxx-print-scalar,black_eval(t,T,r,S,K,vol))
+
+
+        
+        auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
+
+        auto as_black = ad_kernel.Evaluate( 
+                DoubleKernel::BuildFromExo("t"),
+                DoubleKernel::BuildFromExo("T"),
+                DoubleKernel::BuildFromExo("r"),
+                DoubleKernel::BuildFromExo("S"),
+                DoubleKernel::BuildFromExo("K"),
+                DoubleKernel::BuildFromExo("vol")
+        );
+
+
+        Function f("black");
+        f.AddArgument("t");
+        f.AddArgument("T");
+        f.AddArgument("r");
+        f.AddArgument("S");
+        f.AddArgument("K");
+        f.AddArgument("vol");
+
+        using namespace Frontend;
+
+        std::unordered_set< std::shared_ptr<Operator > > seen;
+        struct StackFrame{
+                explicit StackFrame(std::shared_ptr<EndgenousSymbol > op)
+                        : Op{op}
+                {
+                        auto deps_set = Op->EndgenousDependencies();
+                        Deps.assign(deps_set.begin(), deps_set.end());
+                }
+                std::shared_ptr<EndgenousSymbol > Op;
+                std::vector<std::shared_ptr<EndgenousSymbol > > Deps;
+        };
+        std::vector<StackFrame> stack{StackFrame{std::reinterpret_pointer_cast<EndgenousSymbol>(as_black.as_operator_())}};
+        for(size_t ttl=1000;stack.size() && ttl;--ttl){
+                auto& frame = stack.back();
+                if( frame.Deps.size() == 0 ){
+                        if( seen.count(frame.Op) == 0 ){
+                                seen.insert(frame.Op);
+                                auto black = f.AddStatement(frame.Op);
+                                #if 0
+                                std::cout << "----------TERMINAL--------------\n";
+                                frame.Op->Display();
+                                #endif
+                        }
+                        stack.pop_back();
+                        continue;
+                }
+                auto dep = frame.Deps.back();
+                frame.Deps.pop_back();
+
+                stack.push_back(StackFrame{dep});
+
+        }
+
+
+        std::ofstream fstr("prog.cxx");
+        fstr << R"(
+#include <cstdio>
+#include <cmath>
+#include <iostream>
+#include <boost/timer/timer.hpp>
+)";
+
+        StringCodeGenerator cg;
+        cg.Emit(fstr, f);
+        fstr << R"(
+
+double black_fd(double epsilon, double t, double d_t, double T, double d_T, double r, double d_r, double S, double d_S, double K, double d_K, double vol, double d_vol){
+        double dummy;
+        double lower = black( t - d_t*epsilon/2 , &dummy, T - d_T*epsilon/2  , &dummy, r - d_r*epsilon/2  , &dummy, S - d_S*epsilon/2  , &dummy, K - d_K*epsilon/2  , &dummy, vol - d_vol*epsilon/2, &dummy);
+        double upper = black( t + d_t*epsilon/2 , &dummy, T + d_T*epsilon/2  , &dummy, r + d_r*epsilon/2  , &dummy, S + d_S*epsilon/2  , &dummy, K + d_K*epsilon/2  , &dummy, vol + d_vol*epsilon/2, &dummy);
+        double finite_diff = ( upper - lower ) / epsilon;
+        return finite_diff;
+}
+int main(){
+        double t   = 0.0;
+        double T   = 10.0;
+        double r   = 0.04;
+        double S   = 50;
+        double K   = 60;
+        double vol = 0.2;
+
+        double epsilon = 1e-10;
+
+        double d_t = 0.0;
+        double d_T = 0.0;
+        double d_r = 0.0;
+        double d_S = 0.0;
+        double d_K = 0.0;
+        double d_vol = 0.0;
+        double value = black( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
+
+        double d1 = 1/ ( vol * std::sqrt(T - t)) *  ( std::log(S/K) + ( r + vol*vol/2)*(T-t));
+
+        double dummy;
+        double lower = black( t - epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
+        double upper = black( t + epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
+        double finite_diff = ( upper - lower ) / epsilon;
+        double residue = d_t - finite_diff;
+
+        printf("%f,%f,%f,%f,%f,%f => %f,%f => %f,%f,%f\n", t, T, r, S, K, vol, value, d1, d_t, finite_diff, residue);
+
+        printf("d[t]  ,%f,%f\n", d_t  ,  black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0));
+        printf("d[T]  ,%f,%f\n", d_T  ,  black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0));
+        printf("d[r]  ,%f,%f\n", d_r  ,  black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0));
+        printf("d[S]  ,%f,%f\n", d_S  ,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0));
+        printf("d[K]  ,%f,%f\n", d_K  ,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0));
+        printf("d[vol],%f,%f\n", d_vol,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1));
+        
+        // time profile
+        for(volatile size_t N = 100;;N*=2){
+                boost::timer::cpu_timer timer;
+                for(volatile size_t idx=0;idx!=N;++idx){
+                        double value = black( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
+                }
+                std::string ad_time = timer.format(4, "%w");
+                timer.start();
+                for(volatile size_t idx=0;idx!=N;++idx){
+                        black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0);
+                        black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0);
+                        black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0);
+                        black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0);
+                        black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0);
+                        black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1);
+                }
+                std::string fd_time = timer.format(4, "%w");
+                std::cout << N << "," << fd_time << "," << ad_time << "\n";
+        }
+
+}
+)";
+}
+
+
+
 int main(){
         //black_scholes();
         //black_scholes_frontend();
