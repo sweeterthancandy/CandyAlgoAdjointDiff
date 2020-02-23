@@ -1073,11 +1073,28 @@ namespace Frontend{
                 return WithOperators{ Phi::Make( AsOperator(arg) ) };
         }
 
+
+        template<class L, class R>
+        inline auto Pow(L&& l, R&& r){
+                return WithOperators{ 
+                        BinaryOperator::Pow( AsOperator(l), AsOperator(r) )
+                };
+        }
+
         template<class Arg>
         inline auto Stmt(std::string const& name, Arg&& arg){
                 auto ptr = std::make_shared<Statement>(name, AsOperator(arg));
                 return ptr;
         }
+
+        struct Double : WithOperators{
+                template<class Expr>
+                // non-explicit so we can assign more matural
+                //      Double d = ...;
+                Double(Expr&& expr)
+                        : WithOperators{AsOperator(std::forward<Expr>(expr))}
+                {}
+        };
         #if 0
         struct Var{
                 Var(std::string const& name):
@@ -1091,12 +1108,6 @@ namespace Frontend{
         };
         #endif
 
-struct ADDouble{
-        template<class T>
-        explicit ADDouble(T&& expr)
-                : 
-        explicit ADDouble(double value):impl_{Constant::Make(value)}{}
-};
 
 } // end namespace Frontend
 
@@ -1421,6 +1432,11 @@ namespace MathFunctions{
                 return std::log(x);
         }
 
+        using Frontend::Phi;
+        using Frontend::Exp;
+        using Frontend::Pow;
+        using Frontend::Log;
+
 } // end namespace MathFunctions
 
 struct BlackScholesCallOption{
@@ -1448,12 +1464,7 @@ struct BlackScholesCallOption{
         };
 };
 
-
-
-int main(){
-        //black_scholes();
-        black_scholes_frontend();
-
+void black_scholes_template(){
         auto black_eval = BlackScholesCallOption::Build<double>{};
 
         double t   = 0.0;
@@ -1464,5 +1475,95 @@ int main(){
         double vol = 0.2;
 
         std::cout << "black_eval(t,T,r,S,K,vol) => " << black_eval.Evaluate(t,T,r,S,K,vol) << "\n"; // __CandyPrint__(cxx-print-scalar,black_eval(t,T,r,S,K,vol))
+
+
+        
+        auto ad_kernel = BlackScholesCallOption::Build<Frontend::Double>{};
+
+        auto as_black = ad_kernel.Evaluate( 
+                Frontend::Double("t"),
+                Frontend::Double("T"),
+                Frontend::Double("r"),
+                Frontend::Double("S"),
+                Frontend::Double("K"),
+                Frontend::Double("vol")
+        );
+
+        as_black.as_operator_()->Display();
+
+        Function f("black");
+        f.AddArgument("t");
+        f.AddArgument("T");
+        f.AddArgument("r");
+        f.AddArgument("S");
+        f.AddArgument("K");
+        f.AddArgument("vol");
+
+        using namespace Frontend;
+        auto black = f.AddStatement(Stmt("black", as_black));
+
+        std::ofstream fstr("prog.cxx");
+        fstr << R"(
+#include <cstdio>
+#include <cmath>
+)";
+
+        StringCodeGenerator cg;
+        cg.Emit(fstr, f);
+        fstr << R"(
+
+double black_fd(double epsilon, double t, double d_t, double T, double d_T, double r, double d_r, double S, double d_S, double K, double d_K, double vol, double d_vol){
+        double dummy;
+        double lower = black( t - d_t*epsilon/2 , &dummy, T - d_T*epsilon/2  , &dummy, r - d_r*epsilon/2  , &dummy, S - d_S*epsilon/2  , &dummy, K - d_K*epsilon/2  , &dummy, vol - d_vol*epsilon/2, &dummy);
+        double upper = black( t + d_t*epsilon/2 , &dummy, T + d_T*epsilon/2  , &dummy, r + d_r*epsilon/2  , &dummy, S + d_S*epsilon/2  , &dummy, K + d_K*epsilon/2  , &dummy, vol + d_vol*epsilon/2, &dummy);
+        double finite_diff = ( upper - lower ) / epsilon;
+        return finite_diff;
+}
+int main(){
+        double t   = 0.0;
+        double T   = 10.0;
+        double r   = 0.04;
+        double S   = 50;
+        double K   = 60;
+        double vol = 0.2;
+
+        double epsilon = 1e-10;
+
+        double d_t = 0.0;
+        double d_T = 0.0;
+        double d_r = 0.0;
+        double d_S = 0.0;
+        double d_K = 0.0;
+        double d_vol = 0.0;
+        double value = black( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
+
+        double d1 = 1/ ( vol * std::sqrt(T - t)) *  ( std::log(S/K) + ( r + vol*vol/2)*(T-t));
+
+        double dummy;
+        double lower = black( t - epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
+        double upper = black( t + epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
+        double finite_diff = ( upper - lower ) / epsilon;
+        double residue = d_t - finite_diff;
+
+        printf("%f,%f,%f,%f,%f,%f => %f,%f => %f,%f,%f\n", t, T, r, S, K, vol, value, d1, d_t, finite_diff, residue);
+
+        printf("d[t]  ,%f,%f\n", d_t  ,  black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0));
+        printf("d[T]  ,%f,%f\n", d_T  ,  black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0));
+        printf("d[r]  ,%f,%f\n", d_r  ,  black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0));
+        printf("d[S]  ,%f,%f\n", d_S  ,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0));
+        printf("d[K]  ,%f,%f\n", d_K  ,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0));
+        printf("d[vol],%f,%f\n", d_vol,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1));
+        
+
+}
+)";
+}
+
+
+
+int main(){
+        //black_scholes();
+        //black_scholes_frontend();
+        black_scholes_template();
 
 }
