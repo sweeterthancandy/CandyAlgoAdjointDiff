@@ -1092,7 +1092,7 @@ void black_scholes(){
                 Symbol::Make("t")
         );
 
-        auto deno = BinaryOperator::Mul( 
+        auto deno = BinaryOperator::Div( 
                 Constant::Make(1.0),
                 BinaryOperator::Mul(
                         Symbol::Make("vol"),
@@ -1270,7 +1270,8 @@ void black_scholes_frontend(){
                 Symbol::Make("t")
         );
 
-        auto deno = BinaryOperator::Mul( 
+
+        auto deno = BinaryOperator::Div( 
                 Constant::Make(1.0),
                 BinaryOperator::Mul(
                         Symbol::Make("vol"),
