@@ -7,9 +7,9 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <type_traits>
+#include <cmath>
 
 #include <boost/optional.hpp>
-#include <boost/variant.hpp>
 
 
 #if 0
@@ -121,7 +121,9 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 for(;stack.size();){
                         auto head = stack.back();
                         stack.pop_back();
+                        #if 0
                         std::cout << std::string(stack.size()*2, ' ') << head->NameWithHidden() << "\n";
+                        #endif
                         for(auto& ptr : head->children_){
                                 if( ptr->Kind() == OPKind_EndgenousSymbol){
                                         mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
@@ -245,10 +247,12 @@ private:
         
 void Operator::Display(std::ostream& ostr){
 
+        #if 0
         std::cout << "this->Name() => " << this->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,this->Name())
         for(auto const& ptr : EndgenousDependencies() ){
                 std::cout << "    : " << ptr->Name() << "\n";
         }
+        #endif
 
         using ptr_t = std::shared_ptr<Operator const>;
         std::vector<std::vector<ptr_t> > stack{{shared_from_this()}};
@@ -1655,9 +1659,6 @@ void black_scholes_template(){
                 DoubleKernel::BuildFromExo("vol")
         );
 
-        std::cerr << __FILE__ << ":" << __LINE__ << ":A\n"; // __CandyTag__A
-        as_black.as_operator_()->Display();
-        std::cerr << __FILE__ << ":" << __LINE__ << ":B\n"; // __CandyTag__B
 
         Function f("black");
         f.AddArgument("t");
@@ -1687,8 +1688,10 @@ void black_scholes_template(){
                         if( seen.count(frame.Op) == 0 ){
                                 seen.insert(frame.Op);
                                 auto black = f.AddStatement(frame.Op);
+                                #if 0
                                 std::cout << "----------TERMINAL--------------\n";
                                 frame.Op->Display();
+                                #endif
                         }
                         stack.pop_back();
                         continue;
@@ -1705,6 +1708,8 @@ void black_scholes_template(){
         fstr << R"(
 #include <cstdio>
 #include <cmath>
+#include <iostream>
+#include <boost/timer/timer.hpp>
 )";
 
         StringCodeGenerator cg;
@@ -1753,6 +1758,25 @@ int main(){
         printf("d[K]  ,%f,%f\n", d_K  ,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0));
         printf("d[vol],%f,%f\n", d_vol,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1));
         
+        // time profile
+        for(volatile size_t N = 100;;N*=2){
+                boost::timer::cpu_timer timer;
+                for(volatile size_t idx=0;idx!=N;++idx){
+                        double value = black( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
+                }
+                std::string ad_time = timer.format(4, "%w");
+                timer.start();
+                for(volatile size_t idx=0;idx!=N;++idx){
+                        black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0);
+                        black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0);
+                        black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0);
+                        black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0);
+                        black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0);
+                        black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1);
+                }
+                std::string fd_time = timer.format(4, "%w");
+                std::cout << N << "," << fd_time << "," << ad_time << "\n";
+        }
 
 }
 )";
