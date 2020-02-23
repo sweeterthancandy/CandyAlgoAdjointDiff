@@ -676,9 +676,12 @@ struct RemapUnique{
 
                 std::stringstream ss;
                 ss << "__symbol_" << mapped_.size();
+                #if 0
                 auto endogous_sym = EndgenousSymbol::Make(ss.str(), root); 
                 mapped_.insert(std::make_pair(key, NodeProfile{endogous_sym}));
                 return endogous_sym;
+                #endif
+                return root;
         }
         void Display(std::ostream& out = std::cout)const{
                 std::vector<NodeProfile const*> profiles;
