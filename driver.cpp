@@ -5,6 +5,7 @@
 #include <sstream>
 #include <fstream>
 #include <unordered_map>
+#include <type_traits>
 
 #include <boost/optional.hpp>
 #include <boost/variant.hpp>
@@ -933,6 +934,92 @@ int main(){
 )";
 }
 
+namespace Frontend{
+
+        struct WithOperators{
+                WithOperators(std::shared_ptr<Operator> impl)
+                        :impl_(impl)
+                {}
+                std::shared_ptr<Operator> as_operator_()const{
+                        return impl_;
+                }
+        private:
+                std::shared_ptr<Operator> impl_;
+        };
+
+        namespace Detail{
+
+                template<size_t Precedence>
+                struct PrecedenceDevice : PrecedenceDevice<Precedence-1>{};
+                template<>
+                struct PrecedenceDevice<0>{};
+
+                template<
+                        class T,
+                        class = std::__void_t<
+                                typename std::enable_if<
+                                        std::is_floating_point<typename std::decay<T>::type>::value
+                                >::type
+                        >
+                >
+                std::shared_ptr<Operator> AsOperatorImpl(T&& t, PrecedenceDevice<9>&&){
+                        return t.as_operator_();
+                }
+                template<
+                        class T,
+                        class = std::__void_t<decltype(std::declval<T>().as_operator_())>
+                >
+                std::shared_ptr<Operator> AsOperatorImpl(T&& t, PrecedenceDevice<10>&&){
+                        return t.as_operator_();
+                }
+
+        }  // end namespace Detail
+        
+        template<class T>
+        std::shared_ptr<Operator> AsOperator(T&& t){
+                return Detail::AsOperatorImpl(
+                        std::forward<T>(t),
+                        Detail::PrecedenceDevice<100>{}
+                );
+        }
+
+        template<
+                class L,
+                class R,
+                class = std::__void_t<
+                        decltype( AsOperator(std::declval<L>()) ),
+                        decltype( AsOperator(std::declval<R>()) )
+                > 
+        >
+        auto operator-(L&& l, R&& r){
+                return WithOperators{
+                        BinaryOperator::Sub(
+                                 AsOperator(l),
+                                 AsOperator(r)
+                        )
+                };
+        }
+
+
+        inline auto Var(std::string const& name){
+                return WithOperators{Symbol::Make(name)};
+        }
+        #if 0
+        struct Var{
+                Var(std::string const& name):
+                        impl_{Symbol::Make(name)}
+                {}
+                std::shared_ptr<Operator> as_operator_()const{
+                        return impl_;
+                }
+        private:
+                std::shared_ptr<Operator> impl_;
+        };
+        #endif
+
+
+} // end namespace Frontend
+
 void example_1(){
 
 
@@ -940,6 +1027,7 @@ void example_1(){
         f.AddArgument("a");
         f.AddArgument("b");
         f.AddArgument("x");
+
 
         auto expr_0 = BinaryOperator::Mul( Symbol::Make("a"), BinaryOperator::Mul(Symbol::Make("x"),  Symbol::Make("x")));
 
@@ -1145,6 +1233,184 @@ int main(){
 )";
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+void black_scholes_frontend(){
+
+        using namespace Frontend;
+
+
+        Function f("black");
+        f.AddArgument("t");
+        f.AddArgument("T");
+        f.AddArgument("r");
+        f.AddArgument("S");
+        f.AddArgument("K");
+        f.AddArgument("vol");
+
+        auto dsl_time_to_expiry = Var("T") - Var("t");
+
+        AsOperator(dsl_time_to_expiry)->Display();
+
+        auto time_to_expiry = BinaryOperator::Sub(
+                Symbol::Make("T"),
+                Symbol::Make("t")
+        );
+
+        auto deno = BinaryOperator::Mul( 
+                Constant::Make(1.0),
+                BinaryOperator::Mul(
+                        Symbol::Make("vol"),
+                        BinaryOperator::Pow(
+                                time_to_expiry,
+                                Constant::Make(0.5)
+                        )
+                )
+        );
+
+        auto d1 = BinaryOperator::Mul(
+                deno,
+                BinaryOperator::Add(
+                        Log::Make(
+                                BinaryOperator::Div(
+                                        Symbol::Make("S"),
+                                        Symbol::Make("K")
+                                )
+                        ),
+                        BinaryOperator::Mul(
+                                BinaryOperator::Add(
+                                        Symbol::Make("r"),
+                                        BinaryOperator::Div(
+                                                BinaryOperator::Pow(
+                                                        Symbol::Make("vol"),
+                                                        Constant::Make(2.0)
+                                                ),
+                                                Constant::Make(2.0)
+                                        )
+                                ),
+                                time_to_expiry
+                        )
+                )
+        );
+
+        auto stmt_0 = std::make_shared<Statement>("stmt0", d1);
+
+        
+        auto d2 = BinaryOperator::Sub(
+                Symbol::Make(stmt_0->Name()),
+                BinaryOperator::Mul(
+                        Symbol::Make("vol"),
+                        time_to_expiry
+                )
+        );
+
+
+        auto stmt_1 = std::make_shared<Statement>("stmt1", d2);
+        
+        auto pv = BinaryOperator::Mul(
+                Symbol::Make("K"),
+                Exp::Make(
+                        BinaryOperator::Mul(
+                                BinaryOperator::Sub(
+                                        Constant::Make(0.0),
+                                        Symbol::Make("r")
+                                ),
+                                time_to_expiry
+                        )
+                )
+        );
+        
+        auto stmt_2 = std::make_shared<Statement>("stmt2", pv);
+
+        auto black = BinaryOperator::Sub(
+                BinaryOperator::Mul(
+                        Phi::Make(stmt_0),
+                        Symbol::Make("S")
+                ),
+                BinaryOperator::Mul(
+                        Phi::Make(stmt_1),
+                        stmt_2
+                )
+        );
+
+        auto stmt_3 = std::make_shared<Statement>("stmt3", black);
+
+
+        f.AddStatement(stmt_0);
+        f.AddStatement(stmt_1);
+        f.AddStatement(stmt_2);
+        f.AddStatement(stmt_3);
+
+        std::ofstream fstr("prog.cxx");
+        fstr << R"(
+#include <cstdio>
+#include <cmath>
+)";
+
+        StringCodeGenerator cg;
+        cg.Emit(fstr, f);
+        fstr << R"(
+
+double black_fd(double epsilon, double t, double d_t, double T, double d_T, double r, double d_r, double S, double d_S, double K, double d_K, double vol, double d_vol){
+        double dummy;
+        double lower = black( t - d_t*epsilon/2 , &dummy, T - d_T*epsilon/2  , &dummy, r - d_r*epsilon/2  , &dummy, S - d_S*epsilon/2  , &dummy, K - d_K*epsilon/2  , &dummy, vol - d_vol*epsilon/2, &dummy);
+        double upper = black( t + d_t*epsilon/2 , &dummy, T + d_T*epsilon/2  , &dummy, r + d_r*epsilon/2  , &dummy, S + d_S*epsilon/2  , &dummy, K + d_K*epsilon/2  , &dummy, vol + d_vol*epsilon/2, &dummy);
+        double finite_diff = ( upper - lower ) / epsilon;
+        return finite_diff;
+}
 int main(){
-        black_scholes();
+        double t   = 0.0;
+        double T   = 10.0;
+        double r   = 0.04;
+        double S   = 50;
+        double K   = 60;
+        double vol = 0.2;
+
+        double epsilon = 1e-10;
+
+        double d_t = 0.0;
+        double d_T = 0.0;
+        double d_r = 0.0;
+        double d_S = 0.0;
+        double d_K = 0.0;
+        double d_vol = 0.0;
+        double value = black( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
+
+        double d1 = 1/ ( vol * std::sqrt(T - t)) *  ( std::log(S/K) + ( r + vol*vol/2)*(T-t));
+
+        double dummy;
+        double lower = black( t - epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
+        double upper = black( t + epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
+        double finite_diff = ( upper - lower ) / epsilon;
+        double residue = d_t - finite_diff;
+
+        printf("%f,%f,%f,%f,%f,%f => %f,%f => %f,%f,%f\n", t, T, r, S, K, vol, value, d1, d_t, finite_diff, residue);
+
+        printf("d[t]  ,%f,%f\n", d_t  ,  black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0));
+        printf("d[T]  ,%f,%f\n", d_T  ,  black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0));
+        printf("d[r]  ,%f,%f\n", d_r  ,  black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0));
+        printf("d[S]  ,%f,%f\n", d_S  ,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0));
+        printf("d[K]  ,%f,%f\n", d_K  ,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0));
+        printf("d[vol],%f,%f\n", d_vol,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1));
+        
+
+}
+)";
+}
+
+int main(){
+        black_scholes_frontend();
 }
