@@ -112,26 +112,6 @@ struct Operator : std::enable_shared_from_this<Operator>{
         virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans = std::make_shared<DeepCopy>())const=0;
 
         
-        EndgenousSymbolVec DepthFirstAnySymbolicDependency(){
-                EndgenousSymbolVec result;
-                CollectDepthFirstAnySymbolicDependency(result);
-                return result;
-        }
-        void CollectDepthFirstAnySymbolicDependency(EndgenousSymbolVec& mem){
-                std::vector<std::shared_ptr<Operator > > stack{shared_from_this()};
-                for(;stack.size();){
-                        auto head = stack.back();
-                        stack.pop_back();
-                        for(auto& ptr : head->children_){
-                                if( ptr->Kind() == OPKind_EndgenousSymbol ){
-                                        ptr->CollectDepthFirstAnySymbolicDependency(mem);
-                                        mem.push_back(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
-                                } else {
-                                        stack.push_back(ptr);
-                                }
-                        }
-                }
-        }
 
         struct EvalChecker{
                 struct StackFrame{
@@ -189,6 +169,46 @@ struct Operator : std::enable_shared_from_this<Operator>{
 
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const=0;
         virtual void EmitCode(std::ostream& ss)const=0;
+        
+        struct DependentsProfile{
+                void Add(std::shared_ptr<EndgenousSymbol > const& ptr){
+                        if( Set.count(ptr) > 0 )
+                                return;
+                        Set.insert(ptr);
+                        DepthFirst.push_back(ptr);
+                }
+                void Display()const{
+                        std::cout << "displing set\n";
+                        for(auto const& _ : Set ){
+                                std::reinterpret_pointer_cast<Operator>(_)->EmitCode(std::cout);
+                                std::cout << " => " << _ << " => " << _.get() << "\n";
+                                std::reinterpret_pointer_cast<Operator>(_)->Display();
+                        }
+                        std::cout << "displing set done\n";
+                }
+                std::vector<std::shared_ptr<EndgenousSymbol > >        DepthFirst;
+                std::unordered_set<std::shared_ptr<EndgenousSymbol > > Set;
+        };
+        DependentsProfile DepthFirstAnySymbolicDependency(){
+                DependentsProfile result;
+                CollectDepthFirstAnySymbolicDependency(result);
+                return result;
+        }
+        void CollectDepthFirstAnySymbolicDependency(DependentsProfile& mem){
+                std::vector<std::shared_ptr<Operator > > stack{shared_from_this()};
+                for(;stack.size();){
+                        auto head = stack.back();
+                        stack.pop_back();
+                        for(auto& ptr : head->children_){
+                                if( ptr->Kind() == OPKind_EndgenousSymbol ){
+                                        ptr->CollectDepthFirstAnySymbolicDependency(mem);
+                                        mem.Add(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
+                                } else {
+                                        stack.push_back(ptr);
+                                }
+                        }
+                }
+        }
         
         size_t Arity()const{ return children_.size(); }
         std::shared_ptr<Operator> At(size_t idx)const{
@@ -358,7 +378,9 @@ struct EndgenousSymbol : Operator{
         std::string const& Name()const{ return endo_name_; }
         
         static std::shared_ptr<EndgenousSymbol> Make(std::string const& symbol, std::shared_ptr<Operator> const& expr){
-                return std::make_shared<EndgenousSymbol>(symbol, expr);
+                auto ptr =  std::make_shared<EndgenousSymbol>(symbol, expr);
+                std::cout << "Making EndgenousSymbol{" << symbol << ", " << expr << "} => " << ptr << "\n";
+                return ptr;
         }
 
         std::shared_ptr<Operator> Expr()const{ return At(0); }
