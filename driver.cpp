@@ -707,8 +707,10 @@ struct RemapUnique{
                         return root;
                 
                 if( root->Kind() == OPKind_EndgenousSymbol ){
+                        #if 0
                         auto folded_expr = this->FoldImpl(ST, root->At(0), stack);
                         root->Rebind(0, folded_expr);
+                        #endif
                         return root;
                 }
 
