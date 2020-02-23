@@ -670,24 +670,56 @@ struct RemapUnique{
                 std::vector<std::tuple<std::shared_ptr<Operator>, size_t> > Instances;
                 #endif
         };
-        std::shared_ptr<Operator> Fold(std::shared_ptr<Operator> root){
+        std::shared_ptr<Operator> Fold(SymbolTable const& ST, std::shared_ptr<Operator> root){
+                std::vector<std::shared_ptr<Operator> > stack;
+                return FoldImpl(ST, root, stack);
+        }
+        std::shared_ptr<Operator> FoldImpl(SymbolTable const& ST, std::shared_ptr<Operator> root, std::vector<std::shared_ptr<Operator> >& stack){
+
+
+                std::cout << "{\n";
+                for(size_t idx=0;idx!=stack.size();++idx){
+                        std::cout << "    [" << std::setw(2) << idx << "] = " << stack[idx]->NameInvariantOfChildren() << "\n";
+                        if( stack[idx] == root ){
+                                throw std::domain_error("bad decent");
+                        }
+                }
+                std::cout << "    [" << std::setw(2) << stack.size() << "] = " << root->NameInvariantOfChildren() << "\n";
+                std::cout << "}\n";
+
+                stack.push_back(root);
+                struct pop_on_exit_ty{
+                        pop_on_exit_ty( std::vector<std::shared_ptr<Operator> >& stack):stack_{stack}{}
+                        ~pop_on_exit_ty(){
+                                stack_.pop_back();
+                        }
+                private:
+                        std::vector<std::shared_ptr<Operator> >& stack_;
+                };
+
+                pop_on_exit_ty pop_on_exit{stack};
 
                 if( root->Kind() == OPKind_ExogenousSymbol )
                         return root;
                 if( root->Kind() == OPKind_Constant )
                         return root;
+                
+                if( root->Kind() == OPKind_EndgenousSymbol ){
+                        auto folded_expr = this->FoldImpl(ST, root->At(0), stack);
+                        root->Rebind(0, folded_expr);
+                        return root;
+                }
+
+                if( root->IsTerminal() )
+                        return root;
+
 
                 auto name_inv = root->NameInvariantOfChildren();
 
-                if( root->IsNonTerminal() && root->Kind() != OPKind_EndgenousSymbol ){
-                        for(size_t idx=0;idx!=root->Arity();++idx){
-                                auto folded = this->Fold(root->At(idx));
-                                root->Rebind(idx, folded);
-                        }
+                for(size_t idx=0;idx!=root->Arity();++idx){
+                        auto folded = this->FoldImpl(ST, root->At(idx), stack);
+                        root->Rebind(idx, folded);
                 }
-
-                return root;
-
                 assert( name_inv == root->NameInvariantOfChildren());
                 auto key = std::make_tuple(
                         name_inv,
@@ -697,13 +729,20 @@ struct RemapUnique{
                 auto iter = mapped_.find(key);
                 if( iter != mapped_.end() ){
                         ++iter->second.Count;
+                        auto root_eval = root->Eval(ST);
+                        auto match_eval = iter->second.Op->Eval(ST);
+                        if( root_eval != match_eval ){
+                                std::cout << "root_eval => " << root_eval << "\n"; // __CandyPrint__(cxx-print-scalar,root_eval)
+                                std::cout << "match_eval => " << match_eval << "\n"; // __CandyPrint__(cxx-print-scalar,match_eval)
+                                return root;
+                        }
                         return iter->second.Op;
                 }
 
-                #if 0
+                #if 1
                 std::stringstream ss;
                 ss << "__symbol_" << mapped_.size();
-                auto endogous_sym = EndgenousSymbol::Make(ss.str(), root); 
+                auto endogous_sym = EndgenousSymbol::Make(ss.str(), root->Clone()); 
                 mapped_.insert(std::make_pair(key, NodeProfile{endogous_sym}));
                 return endogous_sym;
                 #else
@@ -743,7 +782,6 @@ struct RemapUnique{
                         profile->Op->MutateToEndgenous(ss.str());
                         #endif
                 }
-
         }
 private:
         std::map<
@@ -753,6 +791,7 @@ private:
                 >,
                 NodeProfile
         > mapped_;
+
 
 };
 
@@ -806,6 +845,15 @@ void black_scholes_template_opt(){
 
                 const_folded->EmitCode(std::cout);
                 std::cout << "\n";
+
+                d.push_back(const_folded);
+        }
+
+
+        remap_unique.Fold(ST, removed_endo);
+        for(auto& ptr : d ){
+                ptr = remap_unique.Fold(ST, ptr);
+                std::cout << "ptr->Eval(ST) => " << ptr->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,ptr->Eval(ST))
         }
 
 
