@@ -1091,6 +1091,12 @@ namespace Frontend{
         };
         #endif
 
+struct ADDouble{
+        template<class T>
+        explicit ADDouble(T&& expr)
+                : 
+        explicit ADDouble(double value):impl_{Constant::Make(value)}{}
+};
 
 } // end namespace Frontend
 
@@ -1400,7 +1406,63 @@ int main(){
 )";
 }
 
+namespace MathFunctions{
+
+        inline double Phi(double x){
+                return std::erfc(-x/std::sqrt(2))/2;
+        }
+        inline double Exp(double x){
+                return std::exp(x);
+        }
+        inline double Pow(double x, double y){
+                return std::pow(x,y);
+        }
+        inline double Log(double x){
+                return std::log(x);
+        }
+
+} // end namespace MathFunctions
+
+struct BlackScholesCallOption{
+        template<class Double>
+        struct Build{
+                Double Evaluate(
+                        Double t,
+                        Double T,
+                        Double r,
+                        Double S,
+                        Double K,
+                        Double vol )const
+                {
+                        using MathFunctions::Phi;
+                        using MathFunctions::Exp;
+                        using MathFunctions::Pow;
+                        using MathFunctions::Log;
+
+                        Double d1 = ((1.0 / ( vol * Pow((T - t),0.5) )) * ( Log(S / K) +   (r + ( Pow(vol,2.0) ) / 2 ) * (T - t) ));
+                        Double d2 = d1 - vol * (T - t);
+                        Double pv = K * Exp( -r * ( T - t ) );
+                        Double black = Phi(d1) * S - Phi(d2) * pv;
+                        return black;
+                }
+        };
+};
+
+
+
 int main(){
         //black_scholes();
         black_scholes_frontend();
+
+        auto black_eval = BlackScholesCallOption::Build<double>{};
+
+        double t   = 0.0;
+        double T   = 10.0;
+        double r   = 0.04;
+        double S   = 50;
+        double K   = 60;
+        double vol = 0.2;
+
+        std::cout << "black_eval(t,T,r,S,K,vol) => " << black_eval.Evaluate(t,T,r,S,K,vol) << "\n"; // __CandyPrint__(cxx-print-scalar,black_eval(t,T,r,S,K,vol))
+
 }
