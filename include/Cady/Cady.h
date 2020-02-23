@@ -10,8 +10,10 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <type_traits>
+#include <utility>
 #include <cmath>
 #include <iomanip>
+#include <functional>
 
 #include <boost/optional.hpp>
 
@@ -83,6 +85,12 @@ private:
         std::unordered_map<std::string, double> m_;
 };
 
+struct Operator;
+struct OperatorTransform : std::enable_shared_from_this<OperatorTransform>{
+        virtual ~OperatorTransform()=default;
+        virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr)=0;
+};
+
 struct Operator : std::enable_shared_from_this<Operator>{
 
         explicit Operator(std::string const& name, OperatorKind kind = OPKind_Other)
@@ -96,7 +104,12 @@ struct Operator : std::enable_shared_from_this<Operator>{
         inline void MutateToEndgenous(std::string const& name);
 
 
-        virtual std::shared_ptr<Operator> Clone()const=0;
+        struct DeepCopy : OperatorTransform{
+                virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr){
+                        return ptr->Clone(shared_from_this());
+                }
+        };
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans = std::make_shared<DeepCopy>())const=0;
 
         
         EndgenousSymbolVec DepthFirstAnySymbolicDependency(){
@@ -121,32 +134,42 @@ struct Operator : std::enable_shared_from_this<Operator>{
         }
 
         struct EvalChecker{
-                void Push(std::shared_ptr<Operator const> const& ptr){
+                struct StackFrame{
+                        std::shared_ptr<Operator const> Op;
+                        const char* file;
+                        size_t line;
+                };
+                void Push(std::shared_ptr<Operator const> const& ptr, const char* file, size_t line){
+                        seq_.push_back(StackFrame{ptr, file, line});
                         if( depth_.count(ptr) > 0 ){
                                 for(size_t idx=0;idx!=seq_.size();++idx){
-                                        std::string token = ( ptr == seq_[idx] ? "->" : "  " );
-                                        std::cout << token << "[" << std::setw(2) << idx << "] : " << seq_[idx]->NameInvariantOfChildren() << "\n";
+                                        std::string token = ( ptr == seq_[idx].Op ? "->" : "  " );
+                                        std::stringstream source;
+                                        source << seq_[idx].file << ":" << seq_[idx].line;
+                                        std::cout << token << "[" << std::setw(2) << idx << "] : " << std::setw(20) << source.str() << seq_[idx].Op->NameInvariantOfChildren() << "\n";
                                 }
+                                seq_.pop_back();
+                                seq_[0].Op->Display();
                                 throw std::domain_error("recursive eval");
                         }
                         depth_.insert(ptr);
-                        seq_.push_back(ptr);
                 }
                 void Pop(){
-                        depth_.erase(seq_.back());
+                        depth_.erase(seq_.back().Op);
                         seq_.pop_back();
                 }
 
         private:
                 std::unordered_set<std::shared_ptr<Operator const> > depth_;
-                std::vector<std::shared_ptr<Operator const> > seq_;
+                std::vector<StackFrame> seq_;
         };
 
         struct EvalCheckerDevice{
-                EvalCheckerDevice(EvalChecker& checker, std::shared_ptr<Operator const> ptr)
+                EvalCheckerDevice(EvalChecker& checker, std::shared_ptr<Operator const> ptr,
+                                  const char* file, size_t line)
                         : checker_{nullptr}
                 {
-                        checker.Push(ptr);
+                        checker.Push(ptr, file, line);
                         checker_ = &checker;
                 }
                 ~EvalCheckerDevice(){
@@ -214,7 +237,7 @@ struct Operator : std::enable_shared_from_this<Operator>{
 
         virtual std::vector<std::string> HiddenArguments()const{ return {}; }
 
-        inline void Display(std::ostream& ostr = std::cout);
+        inline void Display(std::ostream& ostr = std::cout)const;
 
         EndgenousSymbolSet EndgenousDependencies(){
                 EndgenousSymbolSet mem;
@@ -275,7 +298,7 @@ struct Constant : Operator{
         }
         virtual std::vector<std::string> HiddenArguments()const override{ return { std::to_string(value_) }; }
         double Value()const{ return value_; }
-        virtual std::shared_ptr<Operator> Clone()const override{ return Make(value_); }
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{ return Make(value_); }
 private:
         double value_;
 };
@@ -303,7 +326,7 @@ struct ExogenousSymbol : Operator{
         static std::shared_ptr<ExogenousSymbol> Make(std::string const& symbol){
                 return std::make_shared<ExogenousSymbol>(symbol);
         }
-        virtual std::shared_ptr<Operator> Clone()const override{ return Make(name_); }
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{ return Make(name_); }
 private:
         std::string name_;
 };
@@ -342,18 +365,20 @@ struct EndgenousSymbol : Operator{
         std::shared_ptr<Operator> as_operator_()const{ return At(0); }
         
         virtual double EvalImpl(SymbolTable const& ST, EvalChecker& checker)const override{
-                EvalCheckerDevice device(checker, shared_from_this());
+                EvalCheckerDevice device(checker, shared_from_this(), __FILE__, __LINE__);
                 return At(0)->EvalImpl(ST, checker);
         }
         
-        virtual std::shared_ptr<Operator> Clone()const override{ return Make(endo_name_, At(0)); }
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{
+                return Make(endo_name_, opt_trans->Apply(At(0)));
+        }
 #if 0
 private:
         std::string name_;
 #endif
 };
         
-void Operator::Display(std::ostream& ostr){
+void Operator::Display(std::ostream& ostr)const{
 
         #if 0
         std::cout << "this->Name() => " << this->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,this->Name())
@@ -459,10 +484,10 @@ struct UnaryOperator : Operator{
                 At(0)->EmitCode(ss);
                 ss << "))";
         }
-        virtual std::shared_ptr<Operator> Clone()const override{
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{
                 return std::make_shared<UnaryOperator>(
                         op_,
-                        At(0)
+                        opt_trans->Apply(At(0))
                 );
         }
         virtual double EvalImpl(SymbolTable const& ST, EvalChecker& checker)const override{
@@ -666,11 +691,11 @@ struct BinaryOperator : Operator{
                 return std::make_shared<BinaryOperator>(OP_POW, left, right);
         }
 
-        virtual std::shared_ptr<Operator> Clone()const override{
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{
                 return std::make_shared<BinaryOperator>(
                         op_,
-                        At(0),
-                        At(1)
+                        opt_trans->Apply(At(0)),
+                        opt_trans->Apply(At(1))
                 );
         }
 private:
@@ -696,8 +721,8 @@ struct Exp : Operator{
         static std::shared_ptr<Exp> Make(std::shared_ptr<Operator> const& arg){
                 return std::make_shared<Exp>(arg);
         }
-        virtual std::shared_ptr<Operator> Clone()const override{
-                return Make(At(0));
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{
+                return Make(opt_trans->Apply(At(0)));
         }
         virtual double EvalImpl(SymbolTable const& ST, EvalChecker& checker)const override{
                 return std::exp(At(0)->EvalImpl(ST, checker));
@@ -723,8 +748,8 @@ struct Log : Operator{
         static std::shared_ptr<Log> Make(std::shared_ptr<Operator> const& arg){
                 return std::make_shared<Log>(arg);
         }
-        virtual std::shared_ptr<Operator> Clone()const override{
-                return Make(At(0));
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{
+                return Make(opt_trans->Apply(At(0)));
         }
         virtual double EvalImpl(SymbolTable const& ST, EvalChecker& checker)const override{
                 return std::log(At(0)->EvalImpl(ST, checker));
@@ -776,8 +801,8 @@ struct Phi : Operator{
         static std::shared_ptr<Operator> Make(std::shared_ptr<Operator> const& arg){
                 return std::make_shared<Phi>(arg);
         }
-        virtual std::shared_ptr<Operator> Clone()const override{
-                return Make(At(0));
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{
+                return Make(opt_trans->Apply(At(0)));
         }
 };
 
