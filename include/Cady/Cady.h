@@ -379,7 +379,7 @@ struct EndgenousSymbol : Operator{
         
         static std::shared_ptr<EndgenousSymbol> Make(std::string const& symbol, std::shared_ptr<Operator> const& expr){
                 auto ptr =  std::make_shared<EndgenousSymbol>(symbol, expr);
-                std::cout << "Making EndgenousSymbol{" << symbol << ", " << expr << "} => " << ptr << "\n";
+                //std::cout << "Making EndgenousSymbol{" << symbol << ", " << expr << "} => " << ptr << "\n";
                 return ptr;
         }
 

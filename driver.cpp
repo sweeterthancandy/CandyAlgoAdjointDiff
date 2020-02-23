@@ -720,35 +720,74 @@ void black_scholes_template_opt(){
 
         auto removed_endo = remove_endogous.Fold(black_expr);
 
-        std::vector<std::shared_ptr<Operator> > ticker{removed_endo};
-        for(auto const& s : { "t", "T", "r", "S", "K", "vol" }){
+        auto params = std::vector<std::string>{ "t", "T", "r", "S", "K", "vol" };
+
+        std::vector<std::shared_ptr<Operator> > ticker;
+        for(auto const& s : params){
                 auto raw_diff = removed_endo->Diff(s);
                 ticker.push_back(raw_diff);
         }
 
         auto unique_mapper = std::make_shared<RemapUnique>();
 
-        for(auto& ptr : ticker){
-                auto constant_folded = constant_fold.Fold(ptr);
+        std::ostream& out = std::cout;
+
+        out << "double black(";
+        for(size_t idx=0;idx!=params.size();++idx){
+                if( idx != 0 ){
+                        out << ", ";
+                }
+                out << "double " << params[idx] << ", double* d_" << params[idx];
+        }
+        out << "){\n";
+
+        std::unordered_set<std::shared_ptr<Operator> > seen;
+        std::shared_ptr<EndgenousSymbol> return_;
+        for(size_t idx=0;idx!=ticker.size();++idx){
+                auto constant_folded = constant_fold.Fold(ticker[idx]);
                 
-                std::cout << "ptr->Eval(ST)             => " << ptr->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,ptr->Eval(ST))
-                std::cout << "constant_folded->Eval(ST) => " << constant_folded->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,constant_folded->Eval(ST))
                 auto unique          = constant_folded->Clone(unique_mapper);
-                std::cout << "unique->Eval(ST)          => " << unique->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,unique->Eval(ST))
 
                 auto dependents = unique->DepthFirstAnySymbolicDependency();
-                //dependents.Display();
 
                 for(auto const& dep : dependents.DepthFirst){
-                        std::cout << "    "  << std::left << std::setw(15);
-                        dep->EmitCode(std::cout);
-                        std::cout << " => ";
-                        dep->Expr()->EmitCode(std::cout);
-                        std::cout << "\n";
+                        // first emit all the expressions we need
+                        if( seen.count(dep) > 0 )
+                                continue;
+                        seen.insert(dep);
+
+                        out << "    double " << std::left << std::setw(15) << dep->Name() << " = ";
+                        dep->Expr()->EmitCode(out);
+                        out << ";\n";
                 }
+
+                out << "    *d_" << params[idx] << " = " << dependents.DepthFirst.back()->Name() << ";\n";
+
+
 
                 //unique->Display();
         }
+
+        auto constant_folded = constant_fold.Fold(removed_endo);
+        
+        auto unique          = constant_folded->Clone(unique_mapper);
+
+        auto dependents = unique->DepthFirstAnySymbolicDependency();
+
+        for(auto const& dep : dependents.DepthFirst){
+                // first emit all the expressions we need
+                if( seen.count(dep) > 0 )
+                        continue;
+                seen.insert(dep);
+
+                out << "    double " << std::left << std::setw(15) << dep->Name() << " = ";
+                dep->Expr()->EmitCode(out);
+                out << ";\n";
+        }
+        out << "    return " << dependents.DepthFirst.back()->Name() << ";\n";
+        out << "}\n";
+
+
 
 
 
