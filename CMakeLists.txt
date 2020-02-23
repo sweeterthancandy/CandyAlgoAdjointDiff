@@ -1,7 +1,7 @@
 
 cmake_minimum_required(VERSION 3.7)
 
-project(Memorize)
+project(Cady)
 
 
 set(CMAKE_CXX_COMPILER clang++)
@@ -25,6 +25,7 @@ add_definitions(-DBOOST_LOG_DYN_LINK)
 add_definitions(-Dint_p_NULL=0)
 
 include_directories(${Boost_INCLUDE_DIRS})
+include_directories(include)
 
 
 add_executable( driver driver.cpp )
