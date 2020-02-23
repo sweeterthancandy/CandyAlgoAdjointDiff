@@ -730,7 +730,7 @@ void black_scholes_template_opt(){
 
         auto unique_mapper = std::make_shared<RemapUnique>();
 
-        std::ostream& out = std::cout;
+        std::ofstream out("black_better.h");
 
         out << "double black(";
         for(size_t idx=0;idx!=params.size();++idx){
@@ -761,7 +761,9 @@ void black_scholes_template_opt(){
                         out << ";\n";
                 }
 
-                out << "    *d_" << params[idx] << " = " << dependents.DepthFirst.back()->Name() << ";\n";
+                out << "    *d_" << params[idx] << " = ";
+                unique->EmitCode(out);
+                out << ";\n";
 
 
 
@@ -784,7 +786,9 @@ void black_scholes_template_opt(){
                 dep->Expr()->EmitCode(out);
                 out << ";\n";
         }
-        out << "    return " << dependents.DepthFirst.back()->Name() << ";\n";
+        out << "    return ";
+        unique->EmitCode(out);
+        out << ";\n";
         out << "}\n";
 
 

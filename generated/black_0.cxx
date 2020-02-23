@@ -217,6 +217,134 @@ double black_fd(double epsilon, double t, double d_t, double T, double d_T, doub
         double finite_diff = ( upper - lower ) / epsilon;
         return finite_diff;
 }
+
+
+
+double black_better(double t, double* d_t, double T, double* d_T, double r, double* d_r, double S, double* d_S, double K, double* d_K, double vol, double* d_vol){
+    double __symbol_5      = ((T)-(t));
+    double __symbol_6      = std::pow(__symbol_5, 0.5);
+    double __symbol_7      = ((vol)*(__symbol_6));
+    double __symbol_8      = ((1)/(__symbol_7));
+    double __symbol_11     = ((S)/(K));
+    double __symbol_12     = std::log(__symbol_11);
+    double __symbol_15     = std::pow(vol, 2);
+    double __symbol_16     = ((__symbol_15)/(2));
+    double __symbol_17     = ((r)+(__symbol_16));
+    double __symbol_18     = ((__symbol_17)*(__symbol_5));
+    double __symbol_19     = ((__symbol_12)+(__symbol_18));
+    double __symbol_20     = ((__symbol_8)*(__symbol_19));
+    double __symbol_21     = std::pow(__symbol_20, 2);
+    double __symbol_22     = ((0.5)*(__symbol_21));
+    double __symbol_23     = (-(__symbol_22));
+    double __symbol_24     = std::exp(__symbol_23);
+    double __symbol_26     = ((__symbol_24)/(2.50663));
+    double __symbol_28     = std::pow(__symbol_5, -0.5);
+    double __symbol_30     = ((__symbol_28)*(-1));
+    double __symbol_31     = ((0.5)*(__symbol_30));
+    double __symbol_32     = ((vol)*(__symbol_31));
+    double __symbol_33     = (-(__symbol_32));
+    double __symbol_34     = std::pow(__symbol_7, 2);
+    double __symbol_35     = ((__symbol_33)/(__symbol_34));
+    double __symbol_36     = ((__symbol_35)*(__symbol_19));
+    double __symbol_37     = ((__symbol_17)*(-1));
+    double __symbol_38     = ((__symbol_8)*(__symbol_37));
+    double __symbol_39     = ((__symbol_36)+(__symbol_38));
+    double __symbol_40     = ((__symbol_26)*(__symbol_39));
+    double __symbol_41     = ((__symbol_40)*(S));
+    double __symbol_42     = ((vol)*(__symbol_5));
+    double __symbol_43     = ((__symbol_20)-(__symbol_42));
+    double __symbol_44     = std::pow(__symbol_43, 2);
+    double __symbol_45     = ((0.5)*(__symbol_44));
+    double __symbol_46     = (-(__symbol_45));
+    double __symbol_47     = std::exp(__symbol_46);
+    double __symbol_48     = ((__symbol_47)/(2.50663));
+    double __symbol_49     = ((vol)*(-1));
+    double __symbol_50     = ((__symbol_39)-(__symbol_49));
+    double __symbol_51     = ((__symbol_48)*(__symbol_50));
+    double __symbol_52     = (-(r));
+    double __symbol_53     = ((__symbol_52)*(__symbol_5));
+    double __symbol_54     = std::exp(__symbol_53);
+    double __symbol_55     = ((K)*(__symbol_54));
+    double __symbol_56     = ((__symbol_51)*(__symbol_55));
+    double __symbol_57     = std::erfc(-(__symbol_43)/std::sqrt(2))/2;
+    double __symbol_58     = ((__symbol_52)*(-1));
+    double __symbol_59     = ((__symbol_54)*(__symbol_58));
+    double __symbol_60     = ((K)*(__symbol_59));
+    double __symbol_61     = ((__symbol_57)*(__symbol_60));
+    double __symbol_62     = ((__symbol_56)+(__symbol_61));
+    *d_t = ((__symbol_41)-(__symbol_62));
+    double __symbol_63     = ((0.5)*(__symbol_28));
+    double __symbol_64     = ((vol)*(__symbol_63));
+    double __symbol_65     = (-(__symbol_64));
+    double __symbol_66     = ((__symbol_65)/(__symbol_34));
+    double __symbol_67     = ((__symbol_66)*(__symbol_19));
+    double __symbol_68     = ((__symbol_8)*(__symbol_17));
+    double __symbol_69     = ((__symbol_67)+(__symbol_68));
+    double __symbol_70     = ((__symbol_26)*(__symbol_69));
+    double __symbol_71     = ((__symbol_70)*(S));
+    double __symbol_72     = ((__symbol_69)-(vol));
+    double __symbol_73     = ((__symbol_48)*(__symbol_72));
+    double __symbol_74     = ((__symbol_73)*(__symbol_55));
+    double __symbol_75     = ((__symbol_54)*(__symbol_52));
+    double __symbol_76     = ((K)*(__symbol_75));
+    double __symbol_77     = ((__symbol_57)*(__symbol_76));
+    double __symbol_78     = ((__symbol_74)+(__symbol_77));
+    *d_T = ((__symbol_71)-(__symbol_78));
+    double __symbol_79     = ((__symbol_8)*(__symbol_5));
+    double __symbol_80     = ((__symbol_26)*(__symbol_79));
+    double __symbol_81     = ((__symbol_80)*(S));
+    double __symbol_82     = ((__symbol_48)*(__symbol_79));
+    double __symbol_83     = ((__symbol_82)*(__symbol_55));
+    double __symbol_84     = (-(1));
+    double __symbol_85     = ((__symbol_84)*(__symbol_5));
+    double __symbol_86     = ((__symbol_54)*(__symbol_85));
+    double __symbol_87     = ((K)*(__symbol_86));
+    double __symbol_88     = ((__symbol_57)*(__symbol_87));
+    double __symbol_89     = ((__symbol_83)+(__symbol_88));
+    *d_r = ((__symbol_81)-(__symbol_89));
+    double __symbol_90     = std::pow(K, 2);
+    double __symbol_91     = ((K)/(__symbol_90));
+    double __symbol_92     = ((__symbol_91)/(__symbol_11));
+    double __symbol_93     = ((__symbol_8)*(__symbol_92));
+    double __symbol_94     = ((__symbol_26)*(__symbol_93));
+    double __symbol_95     = ((__symbol_94)*(S));
+    double __symbol_96     = std::erfc(-(__symbol_20)/std::sqrt(2))/2;
+    double __symbol_97     = ((__symbol_95)+(__symbol_96));
+    double __symbol_98     = ((__symbol_48)*(__symbol_93));
+    double __symbol_99     = ((__symbol_98)*(__symbol_55));
+    *d_S = ((__symbol_97)-(__symbol_99));
+    double __symbol_100    = (-(S));
+    double __symbol_101    = ((__symbol_100)/(__symbol_90));
+    double __symbol_102    = ((__symbol_101)/(__symbol_11));
+    double __symbol_103    = ((__symbol_8)*(__symbol_102));
+    double __symbol_104    = ((__symbol_26)*(__symbol_103));
+    double __symbol_105    = ((__symbol_104)*(S));
+    double __symbol_106    = ((__symbol_48)*(__symbol_103));
+    double __symbol_107    = ((__symbol_106)*(__symbol_55));
+    double __symbol_108    = ((__symbol_57)*(__symbol_54));
+    double __symbol_109    = ((__symbol_107)+(__symbol_108));
+    *d_K = ((__symbol_105)-(__symbol_109));
+    double __symbol_110    = (-(__symbol_6));
+    double __symbol_111    = ((__symbol_110)/(__symbol_34));
+    double __symbol_112    = ((__symbol_111)*(__symbol_19));
+    double __symbol_113    = ((2)*(vol));
+    double __symbol_114    = ((__symbol_113)*(2));
+    double __symbol_116    = ((__symbol_114)/(4));
+    double __symbol_117    = ((__symbol_116)*(__symbol_5));
+    double __symbol_118    = ((__symbol_8)*(__symbol_117));
+    double __symbol_119    = ((__symbol_112)+(__symbol_118));
+    double __symbol_120    = ((__symbol_26)*(__symbol_119));
+    double __symbol_121    = ((__symbol_120)*(S));
+    double __symbol_122    = ((__symbol_119)-(__symbol_5));
+    double __symbol_123    = ((__symbol_48)*(__symbol_122));
+    double __symbol_124    = ((__symbol_123)*(__symbol_55));
+    *d_vol = ((__symbol_121)-(__symbol_124));
+    double __symbol_125    = ((__symbol_96)*(S));
+    double __symbol_126    = ((__symbol_57)*(__symbol_55));
+    return ((__symbol_125)-(__symbol_126));
+}
+
+
 int main(){
         double t   = 0.0;
         double T   = 10.0;
@@ -241,24 +369,24 @@ int main(){
         double d_S_opt = 0.0;
         double d_K_opt = 0.0;
         double d_vol_opt = 0.0;
-        double value_opt = black( t  , &d_t_opt, T  , &d_T_opt, r  , &d_r_opt, S  , &d_S_opt, K  , &d_K_opt, vol, &d_vol_opt);
+        double value_opt = black_manual_opt( t  , &d_t_opt, T  , &d_T_opt, r  , &d_r_opt, S  , &d_S_opt, K  , &d_K_opt, vol, &d_vol_opt);
+        
+        double d_t_better = 0.0;
+        double d_T_better = 0.0;
+        double d_r_better = 0.0;
+        double d_S_better = 0.0;
+        double d_K_better = 0.0;
+        double d_vol_better = 0.0;
+        double value_better = black_better( t  , &d_t_better, T  , &d_T_better, r  , &d_r_better, S  , &d_S_better, K  , &d_K_better, vol, &d_vol_better);
 
-        double d1 = 1/ ( vol * std::sqrt(T - t)) *  ( std::log(S/K) + ( r + vol*vol/2)*(T-t));
 
-        double dummy;
-        double lower = black( t - epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
-        double upper = black( t + epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
-        double finite_diff = ( upper - lower ) / epsilon;
-        double residue = d_t - finite_diff;
-
-        printf("%f,%f,%f,%f,%f,%f => %f,%f => %f,%f,%f\n", t, T, r, S, K, vol, value, d1, d_t, finite_diff, residue);
-
-        printf("d[t]  ,%f,%f,%f\n", d_t  , d_t_opt  , black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0));
-        printf("d[T]  ,%f,%f,%f\n", d_T  , d_T_opt  , black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0));
-        printf("d[r]  ,%f,%f,%f\n", d_r  , d_r_opt  , black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0));
-        printf("d[S]  ,%f,%f,%f\n", d_S  , d_S_opt  , black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0));
-        printf("d[K]  ,%f,%f,%f\n", d_K  , d_K_opt  , black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0));
-        printf("d[vol],%f,%f,%f\n", d_vol, d_vol_opt, black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1));
+        printf("call  ,%f,%f,%f\n",  value, value_opt, value_better);
+        printf("d[t]  ,%f,%f,%f,%f\n", d_t  , d_t_opt  , d_t_better  ,black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0));
+        printf("d[T]  ,%f,%f,%f,%f\n", d_T  , d_T_opt  , d_T_better  ,black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0));
+        printf("d[r]  ,%f,%f,%f,%f\n", d_r  , d_r_opt  , d_r_better  ,black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0));
+        printf("d[S]  ,%f,%f,%f,%f\n", d_S  , d_S_opt  , d_S_better  ,black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0));
+        printf("d[K]  ,%f,%f,%f,%f\n", d_K  , d_K_opt  , d_K_better  ,black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0));
+        printf("d[vol],%f,%f,%f,%f\n", d_vol, d_vol_opt, d_vol_better,black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1));
         
         // time profile
         for(volatile size_t N = 100;;N*=2){
@@ -274,6 +402,12 @@ int main(){
                 }
                 std::string ad_opt_time = timer.format(4, "%w");
                 timer.start();
+                
+                for(volatile size_t idx=0;idx!=N;++idx){
+                        double value = black_better( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
+                }
+                std::string ad_better = timer.format(4, "%w");
+                timer.start();
 
                 for(volatile size_t idx=0;idx!=N;++idx){
                         black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0);
@@ -284,7 +418,7 @@ int main(){
                         black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1);
                 }
                 std::string fd_time = timer.format(4, "%w");
-                std::cout << N << "," << fd_time << "," << ad_time << "," << ad_opt_time << "\n";
+                std::cout << N << "," << fd_time << "," << ad_time << "," << ad_opt_time << "," << ad_better << "\n";
         }
 
 }
