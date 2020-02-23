@@ -530,6 +530,7 @@ struct Statement : Symbol{
                 expr_(expr)
         {}
         std::shared_ptr<Operator> Expr()const{ return expr_; }
+        std::shared_ptr<Operator> as_operator_()const{ return expr_; }
 private:
         std::string name_;
         std::shared_ptr<Operator> expr_;
@@ -958,12 +959,33 @@ namespace Frontend{
                         class T,
                         class = std::__void_t<
                                 typename std::enable_if<
-                                        std::is_floating_point<typename std::decay<T>::type>::value
+                                        std::is_same<const char*, typename std::decay<T>::type>::value ||
+                                        std::is_same<char*      , typename std::decay<T>::type>::value ||
+                                        std::is_same<std::string, typename std::decay<T>::type>::value
                                 >::type
                         >
                 >
+                std::shared_ptr<Operator> AsOperatorImpl(T&& t, PrecedenceDevice<7>&&){
+                        return Symbol::Make(t);
+                }
+                template<
+                        class T,
+                        class = std::__void_t<
+                                typename std::enable_if<
+                                        std::is_floating_point<typename std::decay<T>::type>::value ||
+                                        std::is_integral<typename std::decay<T>::type>::value
+                                >::type
+                        >
+                >
+                std::shared_ptr<Operator> AsOperatorImpl(T&& t, PrecedenceDevice<8>&&){
+                        return Constant::Make(t);
+                }
+                template<
+                        class T,
+                        class = std::__void_t<decltype(std::declval<T>()->as_operator_())>
+                >
                 std::shared_ptr<Operator> AsOperatorImpl(T&& t, PrecedenceDevice<9>&&){
-                        return t.as_operator_();
+                        return t->as_operator_();
                 }
                 template<
                         class T,
@@ -971,6 +993,20 @@ namespace Frontend{
                 >
                 std::shared_ptr<Operator> AsOperatorImpl(T&& t, PrecedenceDevice<10>&&){
                         return t.as_operator_();
+                }
+                template<
+                        class T,
+                        class = std::__void_t<
+                                typename std::enable_if<
+                                        std::is_same<
+                                                std::shared_ptr<Operator>,
+                                                typename std::decay<T>::type
+                                        >::value
+                                >::type
+                        >
+                >
+                std::shared_ptr<Operator> AsOperatorImpl(T&& t, PrecedenceDevice<20>&&){
+                        return t;
                 }
 
         }  // end namespace Detail
@@ -983,26 +1019,63 @@ namespace Frontend{
                 );
         }
 
+        #define FRONTEND_DEFINE_OPERATOR(LEXICAL_TOKEN, MAPPED_FUNCTION) \
+        template<                                                        \
+                class L,                                                 \
+                class R,                                                 \
+                class = std::__void_t<                                   \
+                        decltype( AsOperator(std::declval<L>()) ),       \
+                        decltype( AsOperator(std::declval<R>()) )        \
+                >                                                        \
+        >                                                                \
+        auto operator LEXICAL_TOKEN(L&& l, R&& r){                       \
+                return WithOperators{                                    \
+                        BinaryOperator::MAPPED_FUNCTION(                 \
+                                 AsOperator(l),                          \
+                                 AsOperator(r)                           \
+                        )                                                \
+                };                                                       \
+        }
+        FRONTEND_DEFINE_OPERATOR(+, Add)
+        FRONTEND_DEFINE_OPERATOR(-, Sub)
+        FRONTEND_DEFINE_OPERATOR(*, Mul)
+        FRONTEND_DEFINE_OPERATOR(/, Div)
+        FRONTEND_DEFINE_OPERATOR(^, Pow)
+
         template<
-                class L,
-                class R,
+                class Arg,
                 class = std::__void_t<
-                        decltype( AsOperator(std::declval<L>()) ),
-                        decltype( AsOperator(std::declval<R>()) )
-                > 
+                        decltype( AsOperator(std::declval<Arg>()) )
+                >
         >
-        auto operator-(L&& l, R&& r){
+        auto operator -(Arg&& arg){
                 return WithOperators{
-                        BinaryOperator::Sub(
-                                 AsOperator(l),
-                                 AsOperator(r)
+                        UnaryOperator::UnaryMinus(
+                                 AsOperator(arg)
                         )
                 };
         }
 
-
         inline auto Var(std::string const& name){
                 return WithOperators{Symbol::Make(name)};
+        }
+        template<class T>
+        inline auto Log(T&& arg){
+                return WithOperators{ Log::Make( AsOperator(arg) ) };
+        }
+        template<class T>
+        inline auto Exp(T&& arg){
+                return WithOperators{ Exp::Make( AsOperator(arg) ) };
+        }
+        template<class T>
+        inline auto Phi(T&& arg){
+                return WithOperators{ Phi::Make( AsOperator(arg) ) };
+        }
+
+        template<class Arg>
+        inline auto Stmt(std::string const& name, Arg&& arg){
+                auto ptr = std::make_shared<Statement>(name, AsOperator(arg));
+                return ptr;
         }
         #if 0
         struct Var{
@@ -1251,6 +1324,9 @@ int main(){
 void black_scholes_frontend(){
 
         using namespace Frontend;
+        using Frontend::Log;
+        using Frontend::Exp;
+        using Frontend::Phi;
 
 
         Function f("black");
@@ -1261,93 +1337,36 @@ void black_scholes_frontend(){
         f.AddArgument("K");
         f.AddArgument("vol");
 
-        auto dsl_time_to_expiry = Var("T") - Var("t");
 
-        AsOperator(dsl_time_to_expiry)->Display();
-
-        auto time_to_expiry = BinaryOperator::Sub(
-                Symbol::Make("T"),
-                Symbol::Make("t")
-        );
-
-
-        auto deno = BinaryOperator::Div( 
-                Constant::Make(1.0),
-                BinaryOperator::Mul(
-                        Symbol::Make("vol"),
-                        BinaryOperator::Pow(
-                                time_to_expiry,
-                                Constant::Make(0.5)
-                        )
-                )
-        );
-
-        auto d1 = BinaryOperator::Mul(
-                deno,
-                BinaryOperator::Add(
-                        Log::Make(
-                                BinaryOperator::Div(
-                                        Symbol::Make("S"),
-                                        Symbol::Make("K")
-                                )
-                        ),
-                        BinaryOperator::Mul(
-                                BinaryOperator::Add(
-                                        Symbol::Make("r"),
-                                        BinaryOperator::Div(
-                                                BinaryOperator::Pow(
-                                                        Symbol::Make("vol"),
-                                                        Constant::Make(2.0)
-                                                ),
-                                                Constant::Make(2.0)
-                                        )
-                                ),
-                                time_to_expiry
-                        )
-                )
-        );
-
-        auto stmt_0 = std::make_shared<Statement>("stmt0", d1);
 
         
-        auto d2 = BinaryOperator::Sub(
-                Symbol::Make(stmt_0->Name()),
-                BinaryOperator::Mul(
-                        Symbol::Make("vol"),
-                        time_to_expiry
-                )
+
+        #if 0
+        auto dsl_d1 = (1.0 / ( Var("vol") * ((Var("T") - Var("t")) ^ 0.5) )) * ( Log(Var("S") / "K") +   ("r" + ( Var("vol") ^ 2.0 ) / 2 ) * (Var("T") - Var("t")) );
+
+        auto stmt_0 = std::make_shared<Statement>("stmt0", AsOperator(dsl_d1));
+        #endif
+        auto stmt_0 = Stmt("stmt0",
+                (1.0 / ( Var("vol") * ((Var("T") - Var("t")) ^ 0.5) )) * ( Log(Var("S") / "K") +   ("r" + ( Var("vol") ^ 2.0 ) / 2 ) * (Var("T") - Var("t")) )
         );
 
 
-        auto stmt_1 = std::make_shared<Statement>("stmt1", d2);
         
-        auto pv = BinaryOperator::Mul(
-                Symbol::Make("K"),
-                Exp::Make(
-                        BinaryOperator::Mul(
-                                BinaryOperator::Sub(
-                                        Constant::Make(0.0),
-                                        Symbol::Make("r")
-                                ),
-                                time_to_expiry
-                        )
-                )
-        );
+
+        auto dsl_d2 = stmt_0->Name() - "vol" * (Var("T") - Var("t"));
+
+
+        auto stmt_1 = std::make_shared<Statement>("stmt1", AsOperator(dsl_d2));
         
-        auto stmt_2 = std::make_shared<Statement>("stmt2", pv);
 
-        auto black = BinaryOperator::Sub(
-                BinaryOperator::Mul(
-                        Phi::Make(stmt_0),
-                        Symbol::Make("S")
-                ),
-                BinaryOperator::Mul(
-                        Phi::Make(stmt_1),
-                        stmt_2
-                )
-        );
+        auto dsl_pv = "K" * Exp( -Var("r") * ( Var("T") - Var("t") ) );
+        
+        auto stmt_2 = std::make_shared<Statement>("stmt2", AsOperator(dsl_pv));
 
-        auto stmt_3 = std::make_shared<Statement>("stmt3", black);
+
+        auto dsl_black = Phi(stmt_0) * "S" - Phi(stmt_1) * stmt_2;
+
+        auto stmt_3 = std::make_shared<Statement>("stmt3", AsOperator(dsl_black));
 
 
         f.AddStatement(stmt_0);
@@ -1413,5 +1432,6 @@ int main(){
 }
 
 int main(){
+        //black_scholes();
         black_scholes_frontend();
 }
