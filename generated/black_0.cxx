@@ -95,93 +95,108 @@ double black(double t, double* d_t, double T, double* d_T, double r, double* d_r
 
 double black_manual_opt(double t, double* d_t, double T, double* d_T, double r, double* d_r, double S, double* d_S, double K, double* d_K, double vol, double* d_vol)
 {
-    double __statement_0 = ((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t))))))));
-    double __temp_0 = (((((((-(((vol)*(((0.5)*(((std::pow(((T)-(t)), -0.5))*(-1)))))))))/(std::pow(((vol)*(std::pow(((T)-(t)), 0.5))), 2))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))))+(((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((((r)+(((std::pow(vol, 2))/(2)))))*(-1))))));
-    double __diff___statement_0_t = __temp_0;
-    double __temp_7 = (((((((-(((vol)*(((0.5)*(std::pow(((T)-(t)), -0.5))))))))/(std::pow(((vol)*(std::pow(((T)-(t)), 0.5))), 2))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))))+(((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((r)+(((std::pow(vol, 2))/(2))))))));
-    double __diff___statement_0_T = __temp_7;
-    double __temp_14 = ((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((T)-(t))));
-    double __diff___statement_0_r = __temp_14;
-    double __temp_21 = ((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((((K)/(std::pow(K, 2))))/(((S)/(K))))));
-    double __diff___statement_0_S = __temp_21;
-    double __temp_28 = ((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*((((((-(S)))/(std::pow(K, 2))))/(((S)/(K))))));
-    double __diff___statement_0_K = __temp_28;
-    double __temp_35 = (((((((-(std::pow(((T)-(t)), 0.5))))/(std::pow(((vol)*(std::pow(((T)-(t)), 0.5))), 2))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))))+(((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((((((((2)*(vol)))*(2)))/(4)))*(((T)-(t))))))));
+    auto time_to_expiry = (T)-(t);
+    auto sk_ratio = (S)/(K);
+    auto pow_1 = std::pow((time_to_expiry), 0.5);
+    auto log_0 = std::log((sk_ratio));
+    auto expr_10 = (vol)*(pow_1);
+    auto pow_3 = std::pow((expr_10), 2);
+    auto pow_4 = 1.0 / pow_1;
+    auto pow_5 = std::pow(vol, 2);
+    auto pow_6 = std::pow(K, 2);
+    auto exp_2 = std::exp((((-(r)))*((time_to_expiry))));
+
+    double __statement_0            = ((((1)/((expr_10))))*(((log_0)+(((((r)+(((pow_5)/(2)))))*((time_to_expiry)))))));
+    double __temp_0                 = (((((((-(((vol)*(((0.5)*(((pow_4)*(-1)))))))))/(pow_3)))*(((log_0)+(((((r)+(((pow_5)/(2)))))*((time_to_expiry))))))))+(((((1)/((expr_10))))*(((((r)+(((pow_5)/(2)))))*(-1))))));
+    double __diff___statement_0_t   = __temp_0;
+    double __temp_7                 = (((((((-(((vol)*(((0.5)*(pow_4)))))))/(pow_3)))*(((log_0)+(((((r)+(((pow_5)/(2)))))*((time_to_expiry))))))))+(((((1)/((expr_10))))*(((r)+(((pow_5)/(2))))))));
+    double __diff___statement_0_T   = __temp_7;
+    double __temp_14                = ((((1)/((expr_10))))*((time_to_expiry)));
+    double __diff___statement_0_r   = __temp_14;
+    double __temp_21                = ((((1)/((expr_10))))*(((((K)/(pow_6)))/((sk_ratio)))));
+    double __diff___statement_0_S   = __temp_21;
+    double __temp_28                = ((((1)/((expr_10))))*((((((-(S)))/(pow_6)))/((sk_ratio)))));
+    double __diff___statement_0_K   = __temp_28;
+    double __temp_35                = (((((((-(pow_1)))/(pow_3)))*(((log_0)+(((((r)+(((pow_5)/(2)))))*((time_to_expiry))))))))+(((((1)/((expr_10))))*(((((((((2)*(vol)))*(2)))/(4)))*((time_to_expiry)))))));
     double __diff___statement_0_vol = __temp_35;
+    
+    auto exp_0                      = std::exp((-(((0.5)*(std::pow(__statement_0, 2))))));
 
 
 
-    double __statement_1 = ((__statement_0)-(((vol)*(((T)-(t))))));
-    double __temp_36 = (-(((vol)*(-1))));
-    double __temp_42 = __diff___statement_0_t;
-    double __diff___statement_1_t = __temp_36 + __temp_42;
-    double __temp_44 = (-(vol));
-    double __temp_49 = __diff___statement_0_T;
-    double __diff___statement_1_T = __temp_44 + __temp_49;
-    double __temp_56 = __diff___statement_0_r;
-    double __diff___statement_1_r = __temp_56;
-    double __temp_63 = __diff___statement_0_S;
-    double __diff___statement_1_S = __temp_63;
-    double __temp_70 = __diff___statement_0_K;
-    double __diff___statement_1_K = __temp_70;
-    double __temp_76 = (-(((T)-(t))));
-    double __temp_77 = __diff___statement_0_vol;
+    double __statement_1            = ((__statement_0)-(((vol)*((time_to_expiry)))));
+    double __temp_36                = (-(((vol)*(-1))));
+    double __temp_42                = __diff___statement_0_t;
+    double __diff___statement_1_t   = __temp_36 + __temp_42;
+    double __temp_44                = (-(vol));
+    double __temp_49                = __diff___statement_0_T;
+    double __diff___statement_1_T   = __temp_44 + __temp_49;
+    double __temp_56                = __diff___statement_0_r;
+    double __diff___statement_1_r   = __temp_56;
+    double __temp_63                = __diff___statement_0_S;
+    double __diff___statement_1_S   = __temp_63;
+    double __temp_70                = __diff___statement_0_K;
+    double __diff___statement_1_K   = __temp_70;
+    double __temp_76                = (-((time_to_expiry)));
+    double __temp_77                = __diff___statement_0_vol;
     double __diff___statement_1_vol = __temp_76 + __temp_77;
 
+    auto pow_0                      = std::pow(__statement_1, 2);
+    auto erfc_0                     = std::erfc(-(__statement_1)/std::sqrt(2))/2;
+    auto expr_1                     = (((exp_0/(2.50663)))*(S));
+    auto erfc_1                     = std::erfc(-(__statement_0)/std::sqrt(2))/2;
 
 
-    double __statement_2 = ((K)*(std::exp((((-(r)))*(((T)-(t)))))));
-    double __temp_78 = ((K)*(((std::exp((((-(r)))*(((T)-(t))))))*((((-(r)))*(-1))))));
-    double __diff___statement_2_t = __temp_78;
-    double __temp_87 = ((K)*(((std::exp((((-(r)))*(((T)-(t))))))*((-(r))))));
-    double __diff___statement_2_T = __temp_87;
-    double __temp_96 = ((K)*(((std::exp((((-(r)))*(((T)-(t))))))*((((-(1)))*(((T)-(t))))))));
-    double __diff___statement_2_r = __temp_96;
-    double __diff___statement_2_S = 0.0;
-    double __temp_114 = std::exp((((-(r)))*(((T)-(t)))));
-    double __diff___statement_2_K = __temp_114;
+    double __statement_2            = ((K)*(exp_2));
+    double __temp_78                = ((K)*(((exp_2)*((((-(r)))*(-1))))));
+    double __diff___statement_2_t   = __temp_78;
+    double __temp_87                = ((K)*(((exp_2)*((-(r))))));
+    double __diff___statement_2_T   = __temp_87;
+    double __temp_96                = ((K)*(((exp_2)*((((-(1)))*((time_to_expiry)))))));
+    double __diff___statement_2_r   = __temp_96;
+    double __diff___statement_2_S   = 0.0;
+    double __temp_114               = exp_2;
+    double __diff___statement_2_K   = __temp_114;
     double __diff___statement_2_vol = 0.0;
 
 
-    auto exp_0 = std::exp((-(((0.5)*(std::pow(__statement_0, 2))))));
-    auto pow_0 = std::pow(__statement_1, 2);
-    auto erfc_0 = std::erfc(-(__statement_1)/std::sqrt(2))/2;
+    auto expr_0                     = ((-(((((std::exp((-(((0.5)*(pow_0))))))/(2.50663)))*(__statement_2)))));
 
-    double __statement_3 = ((((std::erfc(-(__statement_0)/std::sqrt(2))/2)*(S)))-(((erfc_0)*(__statement_2))));
-    double __temp_132 = ((((((exp_0)/(2.50663)))*(S)))*(__diff___statement_0_t));
-    double __temp_133 = (((-(((((std::exp((-(((0.5)*(pow_0))))))/(2.50663)))*(__statement_2)))))*(__diff___statement_1_t));
-    double __temp_134 = (((-(erfc_0)))*(__diff___statement_2_t));
-    double __diff___statement_3_t = __temp_132 + __temp_133 + __temp_134;
-    double __temp_141 = ((((((exp_0)/(2.50663)))*(S)))*(__diff___statement_0_T));
-    double __temp_142 = (((-(((((std::exp((-(((0.5)*(pow_0))))))/(2.50663)))*(__statement_2)))))*(__diff___statement_1_T));
-    double __temp_143 = (((-(erfc_0)))*(__diff___statement_2_T));
-    double __diff___statement_3_T = __temp_141 + __temp_142 + __temp_143;
-    double __temp_150 = ((((((exp_0)/(2.50663)))*(S)))*(__diff___statement_0_r));
-    double __temp_151 = (((-(((((std::exp((-(((0.5)*(pow_0))))))/(2.50663)))*(__statement_2)))))*(__diff___statement_1_r));
-    double __temp_152 = (((-(erfc_0)))*(__diff___statement_2_r));
-    double __diff___statement_3_r = __temp_150 + __temp_151 + __temp_152;
-    double __temp_156 = std::erfc(-(__statement_0)/std::sqrt(2))/2;
-    double __temp_159 = ((((((exp_0)/(2.50663)))*(S)))*(__diff___statement_0_S));
-    double __temp_160 = (((-(((((std::exp((-(((0.5)*(pow_0))))))/(2.50663)))*(__statement_2)))))*(__diff___statement_1_S));
-    double __temp_161 = (((-(erfc_0)))*(__diff___statement_2_S));
-    double __diff___statement_3_S = __temp_156 + __temp_159 + __temp_160 + __temp_161;
-    double __temp_168 = ((((((exp_0)/(2.50663)))*(S)))*(__diff___statement_0_K));
-    double __temp_169 = (((-(((((std::exp((-(((0.5)*(pow_0))))))/(2.50663)))*(__statement_2)))))*(__diff___statement_1_K));
-    double __temp_170 = (((-(erfc_0)))*(__diff___statement_2_K));
-    double __diff___statement_3_K = __temp_168 + __temp_169 + __temp_170;
-    double __temp_177 = ((((((exp_0)/(2.50663)))*(S)))*(__diff___statement_0_vol));
-    double __temp_178 = (((-(((((std::exp((-(((0.5)*(pow_0))))))/(2.50663)))*(__statement_2)))))*(__diff___statement_1_vol));
-    double __temp_179 = (((-(erfc_0)))*(__diff___statement_2_vol));
+    double __statement_3            = ((((erfc_1)*(S)))-(((erfc_0)*(__statement_2))));
+    double __temp_132               = ((expr_1)*(__diff___statement_0_t));
+    double __temp_133               = (expr_0*(__diff___statement_1_t));
+    double __temp_134               = (((-(erfc_0)))*(__diff___statement_2_t));
+    double __diff___statement_3_t   = __temp_132 + __temp_133 + __temp_134;
+    double __temp_141               = ((expr_1)*(__diff___statement_0_T));
+    double __temp_142               = (expr_0*(__diff___statement_1_T));
+    double __temp_143               = (((-(erfc_0)))*(__diff___statement_2_T));
+    double __diff___statement_3_T   = __temp_141 + __temp_142 + __temp_143;
+    double __temp_150               = ((expr_1)*(__diff___statement_0_r));
+    double __temp_151               = (expr_0*(__diff___statement_1_r));
+    double __temp_152               = (((-(erfc_0)))*(__diff___statement_2_r));
+    double __diff___statement_3_r   = __temp_150 + __temp_151 + __temp_152;
+    double __temp_156               = erfc_1;
+    double __temp_159               = ((expr_1)*(__diff___statement_0_S));
+    double __temp_160               = (expr_0*(__diff___statement_1_S));
+    double __temp_161               = (((-(erfc_0)))*(__diff___statement_2_S));
+    double __diff___statement_3_S   = __temp_156 + __temp_159 + __temp_160 + __temp_161;
+    double __temp_168               = ((expr_1)*(__diff___statement_0_K));
+    double __temp_169               = (expr_0*(__diff___statement_1_K));
+    double __temp_170               = (((-(erfc_0)))*(__diff___statement_2_K));
+    double __diff___statement_3_K   = __temp_168 + __temp_169 + __temp_170;
+    double __temp_177               = ((expr_1)*(__diff___statement_0_vol));
+    double __temp_178               = (expr_0*(__diff___statement_1_vol));
+    double __temp_179               = (((-(erfc_0)))*(__diff___statement_2_vol));
     double __diff___statement_3_vol = __temp_177 + __temp_178 + __temp_179;
 
 
 
-    *d_t = __diff___statement_3_t;
-    *d_T = __diff___statement_3_T;
-    *d_r = __diff___statement_3_r;
-    *d_S = __diff___statement_3_S;
-    *d_K = __diff___statement_3_K;
-    *d_vol = __diff___statement_3_vol;
+    *d_t                            = __diff___statement_3_t;
+    *d_T                            = __diff___statement_3_T;
+    *d_r                            = __diff___statement_3_r;
+    *d_S                            = __diff___statement_3_S;
+    *d_K                            = __diff___statement_3_K;
+    *d_vol                          = __diff___statement_3_vol;
     return __statement_3;
 }
 
