@@ -1,7 +1,9 @@
 #include "Cady/Cady.h"
 #include "Cady/Frontend.h"
+#include "Cady/CodeGen.h"
 
 using namespace Cady;
+using namespace Cady::CodeGen;
 
 void example_0(){
 
