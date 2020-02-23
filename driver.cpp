@@ -658,16 +658,21 @@ struct RemapUnique : OperatorTransform{
                 if( iter != ops_.end() )
                         return iter->second;
 
-                
-                std::stringstream ss;
-                ss << "__symbol_" << ops_.size();
-                auto endogous_sym = EndgenousSymbol::Make(ss.str(), candidate); 
-                
-                ops_[key] = endogous_sym;
+                if( candidate->Kind() != OPKind_EndgenousSymbol &&
+                    candidate->Kind() != OPKind_ExogenousSymbol &&
+                    candidate->Kind() != OPKind_Constant )
+                {
 
-                
-
-                return endogous_sym;
+                        std::stringstream ss;
+                        ss << "__symbol_" << ops_.size();
+                        auto endogous_sym = EndgenousSymbol::Make(ss.str(), candidate); 
+                        
+                        ops_[key] = endogous_sym;
+                        return endogous_sym;
+                } else {
+                        ops_[key] = candidate;
+                        return candidate;
+                }
         }
 private:
         std::map<
@@ -679,162 +684,6 @@ private:
         > ops_;
 };
 
-#if 0
-struct RemapUnique{
-        struct NodeProfile{
-                NodeProfile(std::shared_ptr<Operator> Op_)
-                        :Op(Op_), Count{1}
-                {}
-                std::shared_ptr<Operator> Op;
-                size_t Count;
-
-                #if 0
-                void RegisterMutator(std::shared_ptr<Operator> ptr, size_t n){
-                        Instances.emplace_back(ptr, n);
-                }
-                void Mutate(std::string const& name){
-                        std::stringstream ss;
-                        static size_t mutate_index = 0;
-                        ss << "__mutate_" << mutate_index;
-                        ++mutate_index;
-                        auto endo = EndgenousSymbol::Make(ss.str(), Op);
-                        for(auto const& _ : Instances ){
-                                std::get<0>(_)->Rebind(std::get<1>(_), endo);
-                        }
-                }
-                std::vector<std::tuple<std::shared_ptr<Operator>, size_t> > Instances;
-                #endif
-        };
-        std::shared_ptr<Operator> Fold(SymbolTable const& ST, std::shared_ptr<Operator> root){
-                std::vector<std::shared_ptr<Operator> > stack;
-                return FoldImpl(ST, root, stack);
-        }
-        std::shared_ptr<Operator> FoldImpl(SymbolTable const& ST, std::shared_ptr<Operator> root, std::vector<std::shared_ptr<Operator> >& stack){
-
-
-                #if 0
-                std::cout << "{\n";
-                for(size_t idx=0;idx!=stack.size();++idx){
-                        std::cout << "    [" << std::setw(2) << idx << "] = " << stack[idx]->NameInvariantOfChildren() << "\n";
-                        if( stack[idx] == root ){
-                                throw std::domain_error("bad decent");
-                        }
-                }
-                std::cout << "    [" << std::setw(2) << stack.size() << "] = " << root->NameInvariantOfChildren() << "\n";
-                std::cout << "}\n";
-                #endif
-
-                stack.push_back(root);
-                struct pop_on_exit_ty{
-                        pop_on_exit_ty( std::vector<std::shared_ptr<Operator> >& stack):stack_{stack}{}
-                        ~pop_on_exit_ty(){
-                                stack_.pop_back();
-                        }
-                private:
-                        std::vector<std::shared_ptr<Operator> >& stack_;
-                };
-
-                pop_on_exit_ty pop_on_exit{stack};
-
-                if( root->Kind() == OPKind_ExogenousSymbol )
-                        return root;
-                if( root->Kind() == OPKind_Constant )
-                        return root;
-
-                if( root->Kind() == OPKind_EndgenousSymbol ){
-                        #if 0
-                        auto folded_expr = this->FoldImpl(ST, root->At(0), stack);
-                        root->Rebind(0, folded_expr);
-                        #endif
-                        return root;
-                }
-
-                if( root->IsTerminal() )
-                        return root;
-
-
-                auto name_inv = root->NameInvariantOfChildren();
-
-                for(size_t idx=0;idx!=root->Arity();++idx){
-                        auto folded = this->FoldImpl(ST, root->At(idx), stack);
-                        root->Rebind(idx, folded);
-                }
-                assert( name_inv == root->NameInvariantOfChildren());
-                auto key = std::make_tuple(
-                        name_inv,
-                        root->Children()
-                        );
-
-                auto iter = mapped_.find(key);
-                if( iter != mapped_.end() ){
-                        ++iter->second.Count;
-                        auto root_eval = root->Eval(ST);
-                        auto match_eval = iter->second.Op->Eval(ST);
-                        if( root_eval != match_eval ){
-                                std::cout << "root_eval => " << root_eval << "\n"; // __CandyPrint__(cxx-print-scalar,root_eval)
-                                std::cout << "match_eval => " << match_eval << "\n"; // __CandyPrint__(cxx-print-scalar,match_eval)
-                                return root;
-                        }
-                        return iter->second.Op;
-                }
-
-                #if 1
-                std::stringstream ss;
-                ss << "__symbol_" << mapped_.size();
-                auto endogous_sym = EndgenousSymbol::Make(ss.str(), root->Clone()); 
-                std::cout << "Making symbol " << ss.str() << " => " << endogous_sym << "\n";
-                mapped_.insert(std::make_pair(key, NodeProfile{endogous_sym}));
-                return endogous_sym;
-                #else
-                mapped_.insert(std::make_pair(key, NodeProfile{root}));
-                return root;
-                #endif
-        }
-        void Display(std::ostream& out = std::cout)const{
-                std::vector<NodeProfile const*> profiles;
-                for(auto const& _ : mapped_){
-                        if( _.second.Op->Kind() == OPKind_ExogenousSymbol ||
-                            _.second.Op->Kind() == OPKind_Constant )
-                                continue;
-                        if( _.second.Count == 1 )
-                                continue;
-                        profiles.push_back(&_.second);
-                }
-                std::sort( profiles.begin(), profiles.end(), 
-                           [](auto const& l, auto const& r){
-                           if( l->Count != r->Count ){
-                           return l->Count > r->Count;
-                           }
-
-                           return l < r;
-                           });
-
-                for(;profiles.size() && profiles.back()->Count == 1;)
-                        profiles.pop_back();
-                for(auto const& profile : profiles){
-                        std::cout << std::setw(40) << profile->Op->NameInvariantOfChildren() <<  "=>" << profile->Count << "\n";
-                        profile->Op->Display();
-                        #if 0
-                        std::stringstream ss;
-                        static size_t mutate_index = 0;
-                        ss << "__mutate_" << mutate_index;
-                        ++mutate_index;
-                        profile->Op->MutateToEndgenous(ss.str());
-                        #endif
-                }
-        }
-private:
-        std::map<
-                std::tuple<
-                std::string,
-                std::vector<std::shared_ptr<Operator> >
-                        >,
-                NodeProfile
-                        > mapped_;
-
-
-};
-#endif
 
 
 
