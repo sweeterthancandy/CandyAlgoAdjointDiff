@@ -2,6 +2,9 @@
 #include "Cady/Frontend.h"
 #include "Cady/CodeGen.h"
 
+#include <map>
+#include <iomanip>
+
 using namespace Cady;
 using namespace Cady::CodeGen;
 
@@ -623,20 +626,97 @@ int main(){
 }
 
 
+struct RemoveEndgenousFolder{
+        std::shared_ptr<Operator> Fold(std::shared_ptr<Operator> root){
+                if( root->Kind() == OPKind_EndgenousSymbol ){
+                        auto as_endgenous = std::reinterpret_pointer_cast<EndgenousSymbol>(root);
+                        return this->Fold(as_endgenous->Expr());
+                }
+                
+                if( root->IsNonTerminal() ){
+                        for(size_t idx=0;idx!=root->Arity();++idx){
+                                auto folded = this->Fold(root->At(idx));
+                                root->Rebind(idx, folded);
+                        }
+                }
+
+                return root;
+        }
+};
+
+
+struct RemapUnique{
+        struct NodeProfile{
+                NodeProfile(std::shared_ptr<Operator> Op_)
+                        :Op(Op_), Count{1}
+                {}
+                std::shared_ptr<Operator> Op;
+                size_t Count;
+        };
+        std::shared_ptr<Operator> Fold(std::shared_ptr<Operator> root){
+                auto name_inv = root->NameInvariantOfChildren();
+                if( root->IsNonTerminal() ){
+                        for(size_t idx=0;idx!=root->Arity();++idx){
+                                auto folded = this->Fold(root->At(idx));
+                                root->Rebind(idx, folded);
+                        }
+                }
+
+                assert( name_inv == root->NameInvariantOfChildren());
+                auto key = std::make_tuple(
+                        name_inv,
+                        root->Children()
+                );
+
+                auto iter = mapped_.find(key);
+                if( iter != mapped_.end() ){
+                        ++iter->second.Count;
+                        return iter->second.Op;
+                }
+
+                mapped_.insert(std::make_pair(key, NodeProfile{root}));
+                return root;
+        }
+        void Display(std::ostream& out = std::cout)const{
+                std::vector<NodeProfile const*> profiles;
+                for(auto const& _ : mapped_){
+                        if( _.second.Op->Kind() == OPKind_ExogenousSymbol ||
+                            _.second.Op->Kind() == OPKind_Constant )
+                                continue;
+                        if( _.second.Count == 1 )
+                                continue;
+                        profiles.push_back(&_.second);
+                }
+                std::sort( profiles.begin(), profiles.end(), 
+                           [](auto const& l, auto const& r){
+                        if( l->Count != r->Count ){
+                                return l->Count > r->Count;
+                        }
+
+                        return l < r;
+                });
+
+                for(;profiles.size() && profiles.back()->Count == 1;)
+                        profiles.pop_back();
+                for(auto const& profile : profiles){
+                        std::cout << std::setw(40) << profile->Op->NameInvariantOfChildren() <<  "=>" << profile->Count << "\n";
+                }
+
+        }
+private:
+        std::map<
+                std::tuple<
+                        std::string,
+                        std::vector<std::shared_ptr<Operator> >
+                >,
+                NodeProfile
+        > mapped_;
+
+};
+
 
 
 void black_scholes_template_opt(){
-        auto black_eval = BlackScholesCallOption::Build<double>{};
-
-        double t   = 0.0;
-        double T   = 10.0;
-        double r   = 0.04;
-        double S   = 50;
-        double K   = 60;
-        double vol = 0.2;
-
-        std::cout << "black_eval(t,T,r,S,K,vol) => " << black_eval.Evaluate(t,T,r,S,K,vol) << "\n"; // __CandyPrint__(cxx-print-scalar,black_eval(t,T,r,S,K,vol))
-
 
         
         auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
@@ -650,127 +730,28 @@ void black_scholes_template_opt(){
                 DoubleKernel::BuildFromExo("vol")
         );
 
+        RemoveEndgenousFolder remove_endogous;
+        RemapUnique remap_unique;
+        Transform::FoldZero constant_fold;
 
-        Function f("black");
-        f.AddArgument("t");
-        f.AddArgument("T");
-        f.AddArgument("r");
-        f.AddArgument("S");
-        f.AddArgument("K");
-        f.AddArgument("vol");
+        auto black_expr = as_black.as_operator_();
+        auto removed_endo = remove_endogous.Fold(black_expr);
 
-        using namespace Frontend;
-
-        std::unordered_set< std::shared_ptr<Operator > > seen;
-        struct StackFrame{
-                explicit StackFrame(std::shared_ptr<EndgenousSymbol > op)
-                        : Op{op}
-                {
-                        auto deps_set = Op->EndgenousDependencies();
-                        Deps.assign(deps_set.begin(), deps_set.end());
-                }
-                std::shared_ptr<EndgenousSymbol > Op;
-                std::vector<std::shared_ptr<EndgenousSymbol > > Deps;
-        };
-        std::vector<StackFrame> stack{StackFrame{std::reinterpret_pointer_cast<EndgenousSymbol>(as_black.as_operator_())}};
-        for(size_t ttl=1000;stack.size() && ttl;--ttl){
-                auto& frame = stack.back();
-                if( frame.Deps.size() == 0 ){
-                        if( seen.count(frame.Op) == 0 ){
-                                seen.insert(frame.Op);
-                                auto black = f.AddStatement(frame.Op);
-                                #if 0
-                                std::cout << "----------TERMINAL--------------\n";
-                                frame.Op->Display();
-                                #endif
-                        }
-                        stack.pop_back();
-                        continue;
-                }
-                auto dep = frame.Deps.back();
-                frame.Deps.pop_back();
-
-                stack.push_back(StackFrame{dep});
-
+        auto unique = remap_unique.Fold(removed_endo);
+        std::vector<std::shared_ptr<Operator> > d;
+        for(auto const& s : { "t", "T", "r", "S", "K", "vol" }){
+                auto raw_diff = unique->Diff(s);
+                auto const_folded = constant_fold.Fold(raw_diff);
+                auto unique_diff = remap_unique.Fold(const_folded);
+                d.push_back(unique_diff);
         }
 
+        unique->Display();
 
-        std::ofstream fstr("prog.cxx");
-        fstr << R"(
-#include <cstdio>
-#include <cmath>
-#include <iostream>
-#include <boost/timer/timer.hpp>
-)";
+        remap_unique.Display();
 
-        StringCodeGenerator cg;
-        cg.Emit(fstr, f);
-        fstr << R"(
 
-double black_fd(double epsilon, double t, double d_t, double T, double d_T, double r, double d_r, double S, double d_S, double K, double d_K, double vol, double d_vol){
-        double dummy;
-        double lower = black( t - d_t*epsilon/2 , &dummy, T - d_T*epsilon/2  , &dummy, r - d_r*epsilon/2  , &dummy, S - d_S*epsilon/2  , &dummy, K - d_K*epsilon/2  , &dummy, vol - d_vol*epsilon/2, &dummy);
-        double upper = black( t + d_t*epsilon/2 , &dummy, T + d_T*epsilon/2  , &dummy, r + d_r*epsilon/2  , &dummy, S + d_S*epsilon/2  , &dummy, K + d_K*epsilon/2  , &dummy, vol + d_vol*epsilon/2, &dummy);
-        double finite_diff = ( upper - lower ) / epsilon;
-        return finite_diff;
-}
-int main(){
-        double t   = 0.0;
-        double T   = 10.0;
-        double r   = 0.04;
-        double S   = 50;
-        double K   = 60;
-        double vol = 0.2;
 
-        double epsilon = 1e-10;
-
-        double d_t = 0.0;
-        double d_T = 0.0;
-        double d_r = 0.0;
-        double d_S = 0.0;
-        double d_K = 0.0;
-        double d_vol = 0.0;
-        double value = black( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
-
-        double d1 = 1/ ( vol * std::sqrt(T - t)) *  ( std::log(S/K) + ( r + vol*vol/2)*(T-t));
-
-        double dummy;
-        double lower = black( t - epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
-        double upper = black( t + epsilon/2 , &dummy, T  , &dummy, r  , &dummy, S  , &dummy, K  , &dummy, vol, &dummy);
-        double finite_diff = ( upper - lower ) / epsilon;
-        double residue = d_t - finite_diff;
-
-        printf("%f,%f,%f,%f,%f,%f => %f,%f => %f,%f,%f\n", t, T, r, S, K, vol, value, d1, d_t, finite_diff, residue);
-
-        printf("d[t]  ,%f,%f\n", d_t  ,  black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0));
-        printf("d[T]  ,%f,%f\n", d_T  ,  black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0));
-        printf("d[r]  ,%f,%f\n", d_r  ,  black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0));
-        printf("d[S]  ,%f,%f\n", d_S  ,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0));
-        printf("d[K]  ,%f,%f\n", d_K  ,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0));
-        printf("d[vol],%f,%f\n", d_vol,  black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1));
-        
-        // time profile
-        for(volatile size_t N = 100;;N*=2){
-                boost::timer::cpu_timer timer;
-                for(volatile size_t idx=0;idx!=N;++idx){
-                        double value = black( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
-                }
-                std::string ad_time = timer.format(4, "%w");
-                timer.start();
-                for(volatile size_t idx=0;idx!=N;++idx){
-                        black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0);
-                        black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0);
-                        black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0);
-                        black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0);
-                        black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0);
-                        black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1);
-                }
-                std::string fd_time = timer.format(4, "%w");
-                std::cout << N << "," << fd_time << "," << ad_time << "\n";
-        }
-
-}
-)";
 }
 
 
@@ -778,6 +759,7 @@ int main(){
 int main(){
         //black_scholes();
         //black_scholes_frontend();
-        black_scholes_template();
+        //black_scholes_template();
+        black_scholes_template_opt();
 
 }

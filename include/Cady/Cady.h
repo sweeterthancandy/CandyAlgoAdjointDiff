@@ -109,6 +109,18 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 ss << "}";
                 return ss.str();
         }
+        std::string NameInvariantOfChildren()const{
+                std::stringstream ss;
+                ss << name_ << "{";
+                auto hidden = HiddenArguments();
+                for(size_t idx=0;idx!=hidden.size();++idx){
+                        if( idx != 0 )
+                                ss << ", ";
+                        ss << hidden[idx];
+                }
+                ss << "}";
+                return ss.str();
+        }
 
         virtual std::vector<std::string> HiddenArguments()const{ return {}; }
 
