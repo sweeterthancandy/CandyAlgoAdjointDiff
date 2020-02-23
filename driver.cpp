@@ -652,15 +652,41 @@ struct RemapUnique{
                 {}
                 std::shared_ptr<Operator> Op;
                 size_t Count;
+
+                #if 0
+                void RegisterMutator(std::shared_ptr<Operator> ptr, size_t n){
+                        Instances.emplace_back(ptr, n);
+                }
+                void Mutate(std::string const& name){
+                        std::stringstream ss;
+                        static size_t mutate_index = 0;
+                        ss << "__mutate_" << mutate_index;
+                        ++mutate_index;
+                        auto endo = EndgenousSymbol::Make(ss.str(), Op);
+                        for(auto const& _ : Instances ){
+                                std::get<0>(_)->Rebind(std::get<1>(_), endo);
+                        }
+                }
+                std::vector<std::tuple<std::shared_ptr<Operator>, size_t> > Instances;
+                #endif
         };
         std::shared_ptr<Operator> Fold(std::shared_ptr<Operator> root){
+
+                if( root->Kind() == OPKind_ExogenousSymbol )
+                        return root;
+                if( root->Kind() == OPKind_Constant )
+                        return root;
+
                 auto name_inv = root->NameInvariantOfChildren();
+
                 if( root->IsNonTerminal() && root->Kind() != OPKind_EndgenousSymbol ){
                         for(size_t idx=0;idx!=root->Arity();++idx){
                                 auto folded = this->Fold(root->At(idx));
                                 root->Rebind(idx, folded);
                         }
                 }
+
+                return root;
 
                 assert( name_inv == root->NameInvariantOfChildren());
                 auto key = std::make_tuple(
@@ -674,15 +700,16 @@ struct RemapUnique{
                         return iter->second.Op;
                 }
 
+                #if 0
                 std::stringstream ss;
                 ss << "__symbol_" << mapped_.size();
-                mapped_.insert(std::make_pair(key, NodeProfile{root}));
-                #if 0
                 auto endogous_sym = EndgenousSymbol::Make(ss.str(), root); 
                 mapped_.insert(std::make_pair(key, NodeProfile{endogous_sym}));
                 return endogous_sym;
-                #endif
+                #else
+                mapped_.insert(std::make_pair(key, NodeProfile{root}));
                 return root;
+                #endif
         }
         void Display(std::ostream& out = std::cout)const{
                 std::vector<NodeProfile const*> profiles;
@@ -708,11 +735,13 @@ struct RemapUnique{
                 for(auto const& profile : profiles){
                         std::cout << std::setw(40) << profile->Op->NameInvariantOfChildren() <<  "=>" << profile->Count << "\n";
                         profile->Op->Display();
+                        #if 0
                         std::stringstream ss;
                         static size_t mutate_index = 0;
                         ss << "__mutate_" << mutate_index;
                         ++mutate_index;
-                        profile->Op->MutateToExogenous(ss.str());
+                        profile->Op->MutateToEndgenous(ss.str());
+                        #endif
                 }
 
         }
@@ -748,30 +777,27 @@ void black_scholes_template_opt(){
         Transform::FoldZero constant_fold;
 
         auto black_expr = as_black.as_operator_();
-        auto removed_endo = remove_endogous.Fold(black_expr);
 
-        auto unique = remap_unique.Fold(removed_endo);
+        std::cout << "--------- black_expr -----------\n";
+        black_expr->Display();
+
+        auto removed_endo = remove_endogous.Fold(black_expr);
+        std::cout << "--------- removed_endo -----------\n";
+        removed_endo->Display();
+
         std::vector<std::shared_ptr<Operator> > d;
         for(auto const& s : { "t", "T", "r", "S", "K", "vol" }){
-                auto raw_diff = unique->Diff(s);
+                auto raw_diff = removed_endo->Diff(s);
+                std::cout << "--------- raw_diff " << s << " -----------\n";
+                //raw_diff->Display();
+
                 auto const_folded = constant_fold.Fold(raw_diff);
-                auto unique_diff = remap_unique.Fold(const_folded);
-                d.push_back(unique_diff);
+                std::cerr << __FILE__ << ":" << __LINE__ << ":B\n"; // __CandyTag__B
+                //const_folded->Display();
+
+                const_folded->EmitCode(std::cout);
+                std::cout << "\n";
         }
-
-        unique->Display();
-
-        remap_unique.Display();
-
-        unique->Display();
-        unique->EmitCode(std::cout);
-        std::cout << "\n";
-        unique->Clone()->Clone()->Clone()->EmitCode(std::cout);
-        std::cout << "\n";
-
-        unique->MutateToExogenous("hello");
-        unique->EmitCode(std::cout);
-        std::cout << "\n";
 
 
 }

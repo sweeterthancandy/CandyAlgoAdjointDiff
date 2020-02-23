@@ -58,6 +58,11 @@ enum OperatorKind{
 
 struct EndgenousSymbol;
 using  EndgenousSymbolSet = std::unordered_set<std::shared_ptr<EndgenousSymbol > >;
+using  EndgenousSymbolVec = std::vector<std::shared_ptr<EndgenousSymbol > >;
+
+struct Operator;
+using OperatorVector = std::vector<std::shared_ptr<Operator> >;
+
 struct Operator : std::enable_shared_from_this<Operator>{
 
         explicit Operator(std::string const& name, OperatorKind kind = OPKind_Other)
@@ -68,10 +73,32 @@ struct Operator : std::enable_shared_from_this<Operator>{
 
         OperatorKind Kind()const{ return kind_; }
 
-        inline void MutateToExogenous(std::string const& name);
+        inline void MutateToEndgenous(std::string const& name);
 
 
         virtual std::shared_ptr<Operator> Clone()const=0;
+
+        
+        EndgenousSymbolVec DepthFirstAnySymbolicDependency(){
+                EndgenousSymbolVec result;
+                CollectDepthFirstAnySymbolicDependency(result);
+                return result;
+        }
+        void CollectDepthFirstAnySymbolicDependency(EndgenousSymbolVec& mem){
+                std::vector<std::shared_ptr<Operator > > stack{shared_from_this()};
+                for(;stack.size();){
+                        auto head = stack.back();
+                        stack.pop_back();
+                        for(auto& ptr : head->children_){
+                                if( ptr->Kind() == OPKind_EndgenousSymbol ){
+                                        ptr->CollectDepthFirstAnySymbolicDependency(mem);
+                                        mem.push_back(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
+                                } else {
+                                        stack.push_back(ptr);
+                                }
+                        }
+                }
+        }
 
         #if 0
         virtual double Eval(SymbolTable const& ST)const=0;
@@ -752,7 +779,7 @@ private:
 };
 
 
-inline void Operator::MutateToExogenous(std::string const& name){
+inline void Operator::MutateToEndgenous(std::string const& name){
         auto clone = this->Clone();
         this->~Operator();
         new(this)EndgenousSymbol(name, clone);
