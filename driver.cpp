@@ -553,8 +553,9 @@ struct Function{
         void AddArgument(std::string const& symbol){
                 args_.push_back(symbol);
         }
-        void AddStatement(std::shared_ptr<Statement> stmt){
+        auto AddStatement(std::shared_ptr<Statement> stmt){
                 stmts_.push_back(stmt);
+                return stmt;
         }
         auto const& Arguments()const{ return args_; }
         auto const& Statements()const{ return stmts_; }
@@ -1337,42 +1338,10 @@ void black_scholes_frontend(){
         f.AddArgument("K");
         f.AddArgument("vol");
 
-
-
-        
-
-        #if 0
-        auto dsl_d1 = (1.0 / ( Var("vol") * ((Var("T") - Var("t")) ^ 0.5) )) * ( Log(Var("S") / "K") +   ("r" + ( Var("vol") ^ 2.0 ) / 2 ) * (Var("T") - Var("t")) );
-
-        auto stmt_0 = std::make_shared<Statement>("stmt0", AsOperator(dsl_d1));
-        #endif
-        auto stmt_0 = Stmt("stmt0",
-                (1.0 / ( Var("vol") * ((Var("T") - Var("t")) ^ 0.5) )) * ( Log(Var("S") / "K") +   ("r" + ( Var("vol") ^ 2.0 ) / 2 ) * (Var("T") - Var("t")) )
-        );
-
-
-        
-
-        auto dsl_d2 = stmt_0->Name() - "vol" * (Var("T") - Var("t"));
-
-
-        auto stmt_1 = std::make_shared<Statement>("stmt1", AsOperator(dsl_d2));
-        
-
-        auto dsl_pv = "K" * Exp( -Var("r") * ( Var("T") - Var("t") ) );
-        
-        auto stmt_2 = std::make_shared<Statement>("stmt2", AsOperator(dsl_pv));
-
-
-        auto dsl_black = Phi(stmt_0) * "S" - Phi(stmt_1) * stmt_2;
-
-        auto stmt_3 = std::make_shared<Statement>("stmt3", AsOperator(dsl_black));
-
-
-        f.AddStatement(stmt_0);
-        f.AddStatement(stmt_1);
-        f.AddStatement(stmt_2);
-        f.AddStatement(stmt_3);
+        auto d1    = f.AddStatement(Stmt("d1"   , (1.0 / ( Var("vol") * ((Var("T") - Var("t")) ^ 0.5) )) * ( Log(Var("S") / "K") +   ("r" + ( Var("vol") ^ 2.0 ) / 2 ) * (Var("T") - Var("t")) )));
+        auto d2    = f.AddStatement(Stmt("d2"   , d1 - "vol" * (Var("T") - Var("t"))));
+        auto pv    = f.AddStatement(Stmt("pv"   , "K" * Exp( -Var("r") * ( Var("T") - Var("t") ) )));
+        auto black = f.AddStatement(Stmt("black", Phi(d1) * "S" - Phi(d2) * pv));
 
         std::ofstream fstr("prog.cxx");
         fstr << R"(
