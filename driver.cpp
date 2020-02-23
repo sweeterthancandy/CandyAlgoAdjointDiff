@@ -97,77 +97,7 @@ struct Operator : std::enable_shared_from_this<Operator>{
 
         virtual std::vector<std::string> HiddenArguments()const{ return {}; }
 
-        void Display(std::ostream& ostr = std::cout)const{
-
-                using ptr_t = std::shared_ptr<Operator const>;
-                std::vector<std::vector<ptr_t> > stack{{shared_from_this()}};
-
-                auto indent = [&](int extra = 0){
-                        return std::string((stack.size()+extra)*2,' ');
-                };
-
-                for(size_t ttl=1000;stack.size() && ttl;--ttl){
-
-                        #if 0
-                        std::cout << "{";
-                        for(size_t j=0;j!=stack.size();++j){
-                                if( j!=0)
-                                        std::cout << ",";
-                                std::cout << stack[j].size();
-                        }
-                        std::cout << "}\n";
-                        #endif
-
-
-
-                        auto& head = stack.back();
-
-                        if( head.empty() ){
-                                stack.pop_back();
-                                if( stack.size() == 0 )
-                                        break;
-                                ostr << indent() << "}\n";
-                                continue;
-                        }
-
-                        auto ptr = head.back();
-                        head.pop_back();
-
-
-
-                        auto hidden = ptr->HiddenArguments();
-                        if( ptr->IsTerminal() ){
-                                #if 1
-                                if( hidden.size() == 0 ){
-                                        ostr << indent() << ptr->Name() << "{}\n";
-                                } else if( hidden.size() == 1 ){
-                                        ostr << indent() << ptr->Name() << "{" << hidden[0] << "}\n";
-                                } else {
-                                        ostr << indent() << ptr->Name() << "{\n";
-                                        for(auto const& s : hidden ){
-                                                ostr << indent(1) << s << "\n";
-                                        }
-                                        ostr << indent() << "}\n";
-                                }
-                                #endif
-                        } else {
-                                ostr << indent() << ptr->Name() << "{\n";
-                                for(auto const& s : hidden ){
-                                        ostr << indent(1) << s << "\n";
-                                }
-                                auto children = ptr->Children();
-                                #if 0
-                                std::cout << "stack.size() => " << stack.size() << "\n"; // __CandyPrint__(cxx-print-scalar,stack.size())
-                                stack.emplace_back();
-                                for(auto iter = children.rbegin(), end = children.rend();iter!=end;++iter){
-                                        stack.back().push_back(*iter);
-                                }
-                                std::cout << "stack.size() => " << stack.size() << "\n"; // __CandyPrint__(cxx-print-scalar,stack.size())
-                                #endif
-                                stack.emplace_back(children.rbegin(), children.rend());
-                        }
-                }
-        }
+        inline void Display(std::ostream& ostr = std::cout)const;
 
         EndgenousSymbolSet EndgenousDependencies()const{
                 EndgenousSymbolSet mem;
@@ -175,9 +105,18 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 return mem;
         }
         virtual void EndgenousDependenciesCollect(EndgenousSymbolSet& mem)const{
-                for(auto const& ptr : children_){
-                        if( ptr->Kind() == OPKind_EndgenousSymbol){
-                                mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
+                std::vector<std::shared_ptr<Operator const> > stack{shared_from_this()};
+                for(;stack.size();){
+                        auto head = stack.back();
+                        stack.pop_back();
+                        for(auto const& ptr : head->children_){
+                                if( ptr->Kind() == OPKind_EndgenousSymbol){
+                                        mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
+                                } else {
+                                        for(auto const& sub : ptr->Children() ){
+                                                stack.push_back(sub);
+                                        }
+                                }
                         }
                 }
         }
@@ -262,8 +201,9 @@ struct EndgenousSymbol : Operator{
                         std::shared_ptr<Operator> const& expr)
                 :Operator{"EndgenousSymbol", OPKind_EndgenousSymbol}
                 ,name_{name}
-                ,expr_{expr}
-        {}
+        {
+                Push(expr);
+        }
         virtual std::vector<std::string> HiddenArguments()const{ return {name_, "<expr>"}; }
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
                 if( symbol == name_ ){
@@ -280,16 +220,94 @@ struct EndgenousSymbol : Operator{
                 return std::make_shared<EndgenousSymbol>(symbol, expr);
         }
 
-        std::shared_ptr<Operator> Expr()const{ return expr_; }
-        std::shared_ptr<Operator> as_operator_()const{ return expr_; }
+        std::shared_ptr<Operator> Expr()const{ return At(0); }
+        std::shared_ptr<Operator> as_operator_()const{ return At(0); }
         
+        #if 0
         virtual void EndgenousDependenciesCollect(EndgenousSymbolSet& mem)const{
                 mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol const>(shared_from_this()));
         }
+        #endif
 private:
         std::string name_;
-        std::shared_ptr<Operator> expr_;
 };
+        
+void Operator::Display(std::ostream& ostr)const{
+
+        std::cout << "this->Name() => " << this->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,this->Name())
+        for(auto const& ptr : EndgenousDependencies() ){
+                std::cout << "    : " << ptr->Name() << "\n";
+        }
+
+        using ptr_t = std::shared_ptr<Operator const>;
+        std::vector<std::vector<ptr_t> > stack{{shared_from_this()}};
+
+        auto indent = [&](int extra = 0){
+                return std::string((stack.size()+extra)*2,' ');
+        };
+
+        for(size_t ttl=1000;stack.size() && ttl;--ttl){
+
+                #if 0
+                std::cout << "{";
+                for(size_t j=0;j!=stack.size();++j){
+                        if( j!=0)
+                                std::cout << ",";
+                        std::cout << stack[j].size();
+                }
+                std::cout << "}\n";
+                #endif
+
+
+
+                auto& head = stack.back();
+
+                if( head.empty() ){
+                        stack.pop_back();
+                        if( stack.size() == 0 )
+                                break;
+                        ostr << indent() << "}\n";
+                        continue;
+                }
+
+                auto ptr = head.back();
+                head.pop_back();
+
+
+
+                auto hidden = ptr->HiddenArguments();
+                if( ptr->IsTerminal() ){
+                        #if 1
+                        if( hidden.size() == 0 ){
+                                ostr << indent() << ptr->Name() << "{}\n";
+                        } else if( hidden.size() == 1 ){
+                                ostr << indent() << ptr->Name() << "{" << hidden[0] << "}\n";
+                        } else {
+                                ostr << indent() << ptr->Name() << "{\n";
+                                for(auto const& s : hidden ){
+                                        ostr << indent(1) << s << "\n";
+                                }
+                                ostr << indent() << "}\n";
+                        }
+                        #endif
+                } else {
+                        ostr << indent() << ptr->Name() << "{\n";
+                        for(auto const& s : hidden ){
+                                ostr << indent(1) << s << "\n";
+                        }
+                        auto children = ptr->Children();
+                        #if 0
+                        std::cout << "stack.size() => " << stack.size() << "\n"; // __CandyPrint__(cxx-print-scalar,stack.size())
+                        stack.emplace_back();
+                        for(auto iter = children.rbegin(), end = children.rend();iter!=end;++iter){
+                                stack.back().push_back(*iter);
+                        }
+                        std::cout << "stack.size() => " << stack.size() << "\n"; // __CandyPrint__(cxx-print-scalar,stack.size())
+                        #endif
+                        stack.emplace_back(children.rbegin(), children.rend());
+                }
+        }
+}
 
 enum UnaryOperatorKind{
         UOP_USUB,
@@ -1585,7 +1603,7 @@ struct DoubleKernel : Frontend::ImbueWith{
         }
         template< class Expr >
         DoubleKernel(Expr&& expr)
-                : impl_{std::make_shared<DoubleKernelOperator>(EndgenousSymbol::Make(Tag(), AsOperadasdor(expr)))}
+                : impl_{std::make_shared<DoubleKernelOperator>(EndgenousSymbol::Make(Tag(), Frontend::AsOperator(expr)))}
         {}
         struct Dispatch_Exo{};
         DoubleKernel( Dispatch_Exo&&, std::shared_ptr<Operator> const& op)
@@ -1626,7 +1644,9 @@ void black_scholes_template(){
                 Frontend::Double("vol")
         );
 
+        std::cerr << __FILE__ << ":" << __LINE__ << ":A\n"; // __CandyTag__A
         as_black.as_operator_()->Display();
+        std::cerr << __FILE__ << ":" << __LINE__ << ":B\n"; // __CandyTag__B
 
         Function f("black");
         f.AddArgument("t");
@@ -1638,9 +1658,37 @@ void black_scholes_template(){
 
         using namespace Frontend;
         auto black = f.AddStatement(Stmt("black", as_black));
+        black->Display();
+        std::cout << "black->Name() => " << black->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,black->Name())
 
-        for(auto const& ptr : black->EndgenousDependencies() ){
-                std::cout << "ptr->Name() => " << ptr->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,ptr->Name())
+        std::unordered_set< std::shared_ptr<Operator const> > seen;
+        struct StackFrame{
+                explicit StackFrame(std::shared_ptr<Operator const> op)
+                        : Op{op}
+                {
+                        auto deps_set = Op->EndgenousDependencies();
+                        Deps.assign(deps_set.begin(), deps_set.end());
+                }
+                std::shared_ptr<Operator const> Op;
+                std::vector<std::shared_ptr<EndgenousSymbol const> > Deps;
+        };
+        std::vector<StackFrame> stack{StackFrame{as_black.as_operator_()}};
+        for(size_t ttl=1000;stack.size() && ttl;--ttl){
+                auto& frame = stack.back();
+                if( frame.Deps.size() == 0 ){
+                        if( seen.count(frame.Op) == 0 ){
+                                seen.insert(frame.Op);
+                                std::cout << "----------TERMINAL--------------\n";
+                                frame.Op->Display();
+                        }
+                        stack.pop_back();
+                        continue;
+                }
+                auto dep = frame.Deps.back();
+                frame.Deps.pop_back();
+
+                stack.push_back(StackFrame{dep});
+
         }
 
 
