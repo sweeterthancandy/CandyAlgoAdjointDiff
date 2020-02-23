@@ -677,6 +677,7 @@ struct RemapUnique{
         std::shared_ptr<Operator> FoldImpl(SymbolTable const& ST, std::shared_ptr<Operator> root, std::vector<std::shared_ptr<Operator> >& stack){
 
 
+                #if 0
                 std::cout << "{\n";
                 for(size_t idx=0;idx!=stack.size();++idx){
                         std::cout << "    [" << std::setw(2) << idx << "] = " << stack[idx]->NameInvariantOfChildren() << "\n";
@@ -686,6 +687,7 @@ struct RemapUnique{
                 }
                 std::cout << "    [" << std::setw(2) << stack.size() << "] = " << root->NameInvariantOfChildren() << "\n";
                 std::cout << "}\n";
+                #endif
 
                 stack.push_back(root);
                 struct pop_on_exit_ty{
@@ -830,31 +832,32 @@ void black_scholes_template_opt(){
         std::cout << "black_expr->Eval(ST) => " << black_expr->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,black_expr->Eval(ST))
 
         auto removed_endo = remove_endogous.Fold(black_expr);
-        std::cout << "--------- removed_endo -----------\n";
-        std::cout << "removed_endo->Eval(ST) => " << removed_endo->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,removed_endo->Eval(ST))
 
-        std::vector<std::shared_ptr<Operator> > d;
+        std::vector<std::shared_ptr<Operator> > ticker{removed_endo};
         for(auto const& s : { "t", "T", "r", "S", "K", "vol" }){
                 auto raw_diff = removed_endo->Diff(s);
-                std::cout << "--------- raw_diff " << s << " -----------\n";
-                std::cout << "raw_diff->Eval(ST) => " << raw_diff->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,raw_diff->Eval(ST))
-
-                auto const_folded = constant_fold.Fold(raw_diff);
-                std::cerr << __FILE__ << ":" << __LINE__ << ":B\n"; // __CandyTag__B
-                std::cout << "const_folded->Eval(ST) => " << const_folded->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,const_folded->Eval(ST))
-
-                const_folded->EmitCode(std::cout);
-                std::cout << "\n";
-
-                d.push_back(const_folded);
+                ticker.push_back(raw_diff);
         }
 
 
-        remap_unique.Fold(ST, removed_endo);
-        for(auto& ptr : d ){
-                ptr = remap_unique.Fold(ST, ptr);
-                std::cout << "ptr->Eval(ST) => " << ptr->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,ptr->Eval(ST))
+        for(auto& ptr : ticker){
+                auto constant_folded = constant_fold.Fold(ptr);
+                auto unique          = remap_unique.Fold(ST, constant_folded);
+                
+                std::cout << "ptr->Eval(ST)             => " << ptr->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,ptr->Eval(ST))
+                std::cout << "constant_folded->Eval(ST) => " << constant_folded->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,constant_folded->Eval(ST))
+                std::cout << "unique->Eval(ST)          => " << unique->Eval(ST) << "\n"; // __CandyPrint__(cxx-print-scalar,unique->Eval(ST))
+
+                for(auto const& dep : ptr->DepthFirstAnySymbolicDependency()){
+                        std::cout << "    "  << std::left << std::setw(15);
+                        dep->EmitCode(std::cout);
+                        std::cout << " => ";
+                        dep->Expr()->EmitCode(std::cout);
+                        std::cout << "\n";
+                }
         }
+
+
 
 
 }
