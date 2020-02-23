@@ -154,6 +154,8 @@ protected:
                 children_.push_back(ptr);
                 return slot;
         }
+
+        std::string exo_name_;
 private:
         std::string name_;
         std::vector<std::shared_ptr<Operator> > children_;
@@ -228,21 +230,21 @@ struct EndgenousSymbol : Operator{
         EndgenousSymbol(std::string const& name,
                         std::shared_ptr<Operator> const& expr)
                 :Operator{"EndgenousSymbol", OPKind_EndgenousSymbol}
-                ,name_{name}
         {
                 Push(expr);
+                exo_name_ = name;
         }
-        virtual std::vector<std::string> HiddenArguments()const{ return {name_, "<expr>"}; }
+        virtual std::vector<std::string> HiddenArguments()const{ return {exo_name_, "<expr>"}; }
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const{
-                if( symbol == name_ ){
+                if( symbol == exo_name_ ){
                         return Constant::Make(1.0);
                 }
                 return Constant::Make(0.0);
         }
         virtual void EmitCode(std::ostream& ss)const{
-                ss << name_;
+                ss << exo_name_;
         }
-        std::string const& Name()const{ return name_; }
+        std::string const& Name()const{ return exo_name_; }
         
         static std::shared_ptr<EndgenousSymbol> Make(std::string const& symbol, std::shared_ptr<Operator> const& expr){
                 return std::make_shared<EndgenousSymbol>(symbol, expr);
@@ -256,8 +258,10 @@ struct EndgenousSymbol : Operator{
                 mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol const>(shared_from_this()));
         }
         #endif
+#if 0
 private:
         std::string name_;
+#endif
 };
         
 void Operator::Display(std::ostream& ostr){

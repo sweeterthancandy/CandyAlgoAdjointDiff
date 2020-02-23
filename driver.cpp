@@ -655,7 +655,7 @@ struct RemapUnique{
         };
         std::shared_ptr<Operator> Fold(std::shared_ptr<Operator> root){
                 auto name_inv = root->NameInvariantOfChildren();
-                if( root->IsNonTerminal() ){
+                if( root->IsNonTerminal() && root->Kind() != OPKind_EndgenousSymbol ){
                         for(size_t idx=0;idx!=root->Arity();++idx){
                                 auto folded = this->Fold(root->At(idx));
                                 root->Rebind(idx, folded);
@@ -674,8 +674,11 @@ struct RemapUnique{
                         return iter->second.Op;
                 }
 
-                mapped_.insert(std::make_pair(key, NodeProfile{root}));
-                return root;
+                std::stringstream ss;
+                ss << "__symbol_" << mapped_.size();
+                auto endogous_sym = EndgenousSymbol::Make(ss.str(), root); 
+                mapped_.insert(std::make_pair(key, NodeProfile{endogous_sym}));
+                return endogous_sym;
         }
         void Display(std::ostream& out = std::cout)const{
                 std::vector<NodeProfile const*> profiles;
@@ -700,6 +703,7 @@ struct RemapUnique{
                         profiles.pop_back();
                 for(auto const& profile : profiles){
                         std::cout << std::setw(40) << profile->Op->NameInvariantOfChildren() <<  "=>" << profile->Count << "\n";
+                        profile->Op->Display();
                 }
 
         }
@@ -749,6 +753,8 @@ void black_scholes_template_opt(){
         unique->Display();
 
         remap_unique.Display();
+
+        unique->EmitCode(std::cout);
 
 
 
