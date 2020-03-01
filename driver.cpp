@@ -839,10 +839,43 @@ struct DataFlow{
                 out << ";\n";
         }
         void EmitReverseADCodeImpl(std::ostream& out)const{
-                #if 0
-                out << "double " << "_rev_ad_" << sym_->Name() << " = ";
+                auto make_ad_sym = [](auto const& name){
+                        return "__rev_ad_" + name;
+                };
+                out << "double " << make_ad_sym(sym_->Name()) << " = ";
+                if( children_.size() > 0 ){
+                        static Transform::FoldZero constant_fold;
+                        // forward
+                        auto make_node_back = [&](auto child){
+                                return constant_fold.Fold(
+                                        BinaryOperator::Mul(
+                                                child->Expr()->Expr()->Diff(sym_->Name()),
+                                                ExogenousSymbol::Make(make_ad_sym(child->Name()))
+                                        )
+                                );
+                        };
+                        std::shared_ptr<Operator> head = make_node_back(children_[0]);
+                        for(size_t idx=1;idx<children_.size();++idx){
+                                head = BinaryOperator::Add(
+                                        head,
+                                        make_node_back(children_[idx])
+                                );
+                        }
+                                
+                        head->EmitCode(out);
+                } else {
+                        out << "1.0";
+                }
                 out << ";\n";
-                #endif
+
+                auto make_ptr_sym = [](auto const& name){
+                        return "d_" + name;
+                };
+                if( parents_.empty() ){
+                        auto param_name = std::dynamic_pointer_cast<ExogenousSymbol>(sym_->Expr());
+                        out << "*" << make_ptr_sym(param_name->Name()) << " = " << make_ad_sym(sym_->Name()) << ";\n";
+                }
+
         }
 
         void EmitDot(DotCompiler& compiler)const{
@@ -977,7 +1010,7 @@ void DataFlowGraph::EmitCppCode(std::ostream& out)const{
 #include <cmath>
 #include <iostream>
 
-double black( double t, double T, double r, double S, double K, double vol){
+double black(double t, double* d_t, double T, double* d_T, double r, double* d_r, double S, double* d_S, double K, double* d_K, double vol, double* d_vol){
 )";
         for(auto const& flow : rank_){
                 flow->EmitEvalCodeImpl(out);
@@ -986,7 +1019,7 @@ double black( double t, double T, double r, double S, double K, double vol){
                 --idx;
                 rank_[idx]->EmitReverseADCodeImpl(out);
         }
-        out << "return " << rank_.back()->Name() << "\n";
+        out << "return " << rank_.back()->Name() << ";\n";
         out << "}";
         out <<
 R"(
@@ -999,7 +1032,21 @@ int main(){
         double K   = 60;
         double vol = 0.2;
 
-        std::cout << black(t,T,r,S,K,vol) << "\n";
+        double d_t = 0.0;
+        double d_T = 0.0;
+        double d_r = 0.0;
+        double d_S = 0.0;
+        double d_K = 0.0;
+        double d_vol = 0.0;
+        double value = black( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
+
+        std::cout << "black = " << value << "\n";
+        std::cout << "d_t   = " << d_t << "\n";
+        std::cout << "d_T   = " << d_T << "\n";
+        std::cout << "d_r   = " << d_r << "\n";
+        std::cout << "d_S   = " << d_S << "\n";
+        std::cout << "d_K   = " << d_K << "\n";
+        std::cout << "d_vol = " << d_vol << "\n";
 }
 )";
 }

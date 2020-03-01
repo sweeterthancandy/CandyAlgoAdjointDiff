@@ -344,6 +344,80 @@ double black_better(double t, double* d_t, double T, double* d_T, double r, doub
     return ((__symbol_125)-(__symbol_126));
 }
 
+double black_backwards(double t, double* d_t, double T, double* d_T, double r, double* d_r, double S, double* d_S, double K, double* d_K, double vol, double* d_vol){
+        double w2 = vol;
+        double w3 = T;
+        double w4 = t;
+        double w5 = ((w3)-(w4));
+        double w7 = std::pow(w5, 0.5);
+        double w8 = ((w2)*(w7));
+        double w9 = ((1)/(w8));
+        double w10 = S;
+        double w11 = K;
+        double w12 = ((w10)/(w11));
+        double w13 = std::log(w12);
+        double w14 = r;
+        double w16 = std::pow(w2, 2);
+        double w17 = ((w16)/(2));
+        double w18 = ((w14)+(w17));
+        double w19 = ((w18)*(w5));
+        double w20 = ((w13)+(w19));
+        double w21 = ((w9)*(w20));
+        double __statement_0 = w21;
+        double w23 = std::erfc(-(__statement_0)/std::sqrt(2))/2;
+        double w24 = ((w23)*(w10));
+        double w25 = ((w2)*(w5));
+        double w26 = ((__statement_0)-(w25));
+        double __statement_1 = w26;
+        double w28 = std::erfc(-(__statement_1)/std::sqrt(2))/2;
+        double w29 = (-(w14));
+        double w30 = ((w29)*(w5));
+        double w31 = std::exp(w30);
+        double w32 = ((w11)*(w31));
+        double __statement_2 = w32;
+        double w34 = ((w28)*(__statement_2));
+        double w35 = ((w24)-(w34));
+        double __rev_ad_w35 = 1.0;
+        double __rev_ad_w34 = ((-1)*(__rev_ad_w35));
+        double __rev_ad___statement_2 = ((w28)*(__rev_ad_w34));
+        double __rev_ad_w32 = __rev_ad___statement_2;
+        double __rev_ad_w31 = ((w11)*(__rev_ad_w32));
+        double __rev_ad_w30 = ((std::exp(w30))*(__rev_ad_w31));
+        double __rev_ad_w29 = ((w5)*(__rev_ad_w30));
+        double __rev_ad_w28 = ((__statement_2)*(__rev_ad_w34));
+        double __rev_ad___statement_1 = ((((std::exp((-(((0.5)*(std::pow(__statement_1, 2)))))))/(2.50663)))*(__rev_ad_w28));
+        double __rev_ad_w26 = __rev_ad___statement_1;
+        double __rev_ad_w25 = ((-1)*(__rev_ad_w26));
+        double __rev_ad_w24 = __rev_ad_w35;
+        double __rev_ad_w23 = ((w10)*(__rev_ad_w24));
+        double __rev_ad___statement_0 = ((((((std::exp((-(((0.5)*(std::pow(__statement_0, 2)))))))/(2.50663)))*(__rev_ad_w23)))+(__rev_ad_w26));
+        double __rev_ad_w21 = __rev_ad___statement_0;
+        double __rev_ad_w20 = ((w9)*(__rev_ad_w21));
+        double __rev_ad_w19 = __rev_ad_w20;
+        double __rev_ad_w18 = ((w5)*(__rev_ad_w19));
+        double __rev_ad_w17 = __rev_ad_w18;
+        double __rev_ad_w16 = ((((2)/(4)))*(__rev_ad_w17));
+        double __rev_ad_w14 = ((__rev_ad_w18)+((((-(1)))*(__rev_ad_w29))));
+        *d_r = __rev_ad_w14;
+        double __rev_ad_w13 = __rev_ad_w20;
+        double __rev_ad_w12 = ((((1)/(w12)))*(__rev_ad_w13));
+        double __rev_ad_w11 = (((((((-(w10)))/(std::pow(w11, 2))))*(__rev_ad_w12)))+(((w31)*(__rev_ad_w32))));
+        *d_K = __rev_ad_w11;
+        double __rev_ad_w10 = ((((((w11)/(std::pow(w11, 2))))*(__rev_ad_w12)))+(((w23)*(__rev_ad_w24))));
+        *d_S = __rev_ad_w10;
+        double __rev_ad_w9 = ((w20)*(__rev_ad_w21));
+        double __rev_ad_w8 = ((((-1)/(std::pow(w8, 2))))*(__rev_ad_w9));
+        double __rev_ad_w7 = ((w2)*(__rev_ad_w8));
+        double __rev_ad_w5 = ((((((((((0.5)*(std::pow(w5, -0.5))))*(__rev_ad_w7)))+(((w18)*(__rev_ad_w19)))))+(((w2)*(__rev_ad_w25)))))+(((w29)*(__rev_ad_w30))));
+        double __rev_ad_w4 = ((-1)*(__rev_ad_w5));
+        *d_t = __rev_ad_w4;
+        double __rev_ad_w3 = __rev_ad_w5;
+        *d_T = __rev_ad_w3;
+        double __rev_ad_w2 = ((((((w7)*(__rev_ad_w8)))+(((((2)*(w2)))*(__rev_ad_w16)))))+(((w5)*(__rev_ad_w25))));
+        *d_vol = __rev_ad_w2;
+        return w35;
+}
+
 
 int main(){
         double t   = 0.0;
@@ -378,15 +452,23 @@ int main(){
         double d_K_better = 0.0;
         double d_vol_better = 0.0;
         double value_better = black_better( t  , &d_t_better, T  , &d_T_better, r  , &d_r_better, S  , &d_S_better, K  , &d_K_better, vol, &d_vol_better);
+        
+        double d_t_backwards = 0.0;
+        double d_T_backwards = 0.0;
+        double d_r_backwards = 0.0;
+        double d_S_backwards = 0.0;
+        double d_K_backwards = 0.0;
+        double d_vol_backwards = 0.0;
+        double value_backwards = black_backwards( t  , &d_t_backwards, T  , &d_T_backwards, r  , &d_r_backwards, S  , &d_S_backwards, K  , &d_K_backwards, vol, &d_vol_backwards);
 
 
-        printf("call  ,%f,%f,%f\n",  value, value_opt, value_better);
-        printf("d[t]  ,%f,%f,%f,%f\n", d_t  , d_t_opt  , d_t_better  ,black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0));
-        printf("d[T]  ,%f,%f,%f,%f\n", d_T  , d_T_opt  , d_T_better  ,black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0));
-        printf("d[r]  ,%f,%f,%f,%f\n", d_r  , d_r_opt  , d_r_better  ,black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0));
-        printf("d[S]  ,%f,%f,%f,%f\n", d_S  , d_S_opt  , d_S_better  ,black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0));
-        printf("d[K]  ,%f,%f,%f,%f\n", d_K  , d_K_opt  , d_K_better  ,black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0));
-        printf("d[vol],%f,%f,%f,%f\n", d_vol, d_vol_opt, d_vol_better,black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1));
+        printf("call  ,%f,%f,%f,%f\n"     , value, value_opt, value_better, value_backwards);
+        printf("d[t]  ,%f,%f,%f,%f,%f\n"  , d_t      , d_t_opt  , d_t_better  , d_t_backwards  ,black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0));
+        printf("d[T]  ,%f,%f,%f,%f,%f\n"  , d_T      , d_T_opt  , d_T_better  , d_T_backwards  ,black_fd(epsilon, t, 0, T  , 1, r  , 0, S  , 0, K  , 0, vol, 0));
+        printf("d[r]  ,%f,%f,%f,%f,%f\n"  , d_r      , d_r_opt  , d_r_better  , d_r_backwards  ,black_fd(epsilon, t, 0, T  , 0, r  , 1, S  , 0, K  , 0, vol, 0));
+        printf("d[S]  ,%f,%f,%f,%f,%f\n"  , d_S      , d_S_opt  , d_S_better  , d_S_backwards  ,black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 1, K  , 0, vol, 0));
+        printf("d[K]  ,%f,%f,%f,%f,%f\n"  , d_K      , d_K_opt  , d_K_better  , d_K_backwards  ,black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 1, vol, 0));
+        printf("d[vol],%f,%f,%f,%f,%f\n"  , d_vol    , d_vol_opt, d_vol_better, d_vol_backwards,black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1));
         
         // time profile
         for(volatile size_t N = 100;;N*=2){
@@ -408,6 +490,12 @@ int main(){
                 }
                 std::string ad_better = timer.format(4, "%w");
                 timer.start();
+                
+                for(volatile size_t idx=0;idx!=N;++idx){
+                        double value = black_backwards( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
+                }
+                std::string ad_backwards = timer.format(4, "%w");
+                timer.start();
 
                 for(volatile size_t idx=0;idx!=N;++idx){
                         black_fd(epsilon, t, 1, T  , 0, r  , 0, S  , 0, K  , 0, vol, 0);
@@ -418,7 +506,7 @@ int main(){
                         black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1);
                 }
                 std::string fd_time = timer.format(4, "%w");
-                std::cout << N << "," << fd_time << "," << ad_time << "," << ad_opt_time << "," << ad_better << "\n";
+                std::cout << N << "," << fd_time << "," << ad_time << "," << ad_opt_time << "," << ad_better << "," << ad_backwards << "\n";
         }
 
 }
