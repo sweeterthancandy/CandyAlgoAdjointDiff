@@ -345,79 +345,218 @@ double black_better(double t, double* d_t, double T, double* d_T, double r, doub
 }
 
 double black_backwards(double t, double* d_t, double T, double* d_T, double r, double* d_r, double S, double* d_S, double K, double* d_K, double vol, double* d_vol){
-        double w2 = vol;
-        double w3 = T;
-        double w4 = t;
-        double w5 = ((w3)-(w4));
-        double w7 = std::pow(w5, 0.5);
-        double w8 = ((w2)*(w7));
-        double w9 = ((1)/(w8));
-        double w10 = S;
-        double w11 = K;
-        double w12 = ((w10)/(w11));
-        double w13 = std::log(w12);
-        double w14 = r;
-        double w16 = std::pow(w2, 2);
-        double w17 = ((w16)/(2));
-        double w18 = ((w14)+(w17));
-        double w19 = ((w18)*(w5));
-        double w20 = ((w13)+(w19));
-        double w21 = ((w9)*(w20));
-        double __statement_0 = w21;
-        double w23 = std::erfc(-(__statement_0)/std::sqrt(2))/2;
-        double w24 = ((w23)*(w10));
-        double w25 = ((w2)*(w5));
-        double w26 = ((__statement_0)-(w25));
-        double __statement_1 = w26;
-        double w28 = std::erfc(-(__statement_1)/std::sqrt(2))/2;
-        double w29 = (-(w14));
-        double w30 = ((w29)*(w5));
-        double w31 = std::exp(w30);
-        double w32 = ((w11)*(w31));
-        double __statement_2 = w32;
-        double w34 = ((w28)*(__statement_2));
-        double w35 = ((w24)-(w34));
-        double __rev_ad_w35 = 1.0;
-        double __rev_ad_w34 = ((-1)*(__rev_ad_w35));
-        double __rev_ad___statement_2 = ((w28)*(__rev_ad_w34));
-        double __rev_ad_w32 = __rev_ad___statement_2;
-        double __rev_ad_w31 = ((w11)*(__rev_ad_w32));
-        double __rev_ad_w30 = ((std::exp(w30))*(__rev_ad_w31));
-        double __rev_ad_w29 = ((w5)*(__rev_ad_w30));
-        double __rev_ad_w28 = ((__statement_2)*(__rev_ad_w34));
-        double __rev_ad___statement_1 = ((((std::exp((-(((0.5)*(std::pow(__statement_1, 2)))))))/(2.50663)))*(__rev_ad_w28));
-        double __rev_ad_w26 = __rev_ad___statement_1;
-        double __rev_ad_w25 = ((-1)*(__rev_ad_w26));
-        double __rev_ad_w24 = __rev_ad_w35;
-        double __rev_ad_w23 = ((w10)*(__rev_ad_w24));
-        double __rev_ad___statement_0 = ((((((std::exp((-(((0.5)*(std::pow(__statement_0, 2)))))))/(2.50663)))*(__rev_ad_w23)))+(__rev_ad_w26));
-        double __rev_ad_w21 = __rev_ad___statement_0;
-        double __rev_ad_w20 = ((w9)*(__rev_ad_w21));
-        double __rev_ad_w19 = __rev_ad_w20;
-        double __rev_ad_w18 = ((w5)*(__rev_ad_w19));
-        double __rev_ad_w17 = __rev_ad_w18;
-        double __rev_ad_w16 = ((((2)/(4)))*(__rev_ad_w17));
-        double __rev_ad_w14 = ((__rev_ad_w18)+((((-(1)))*(__rev_ad_w29))));
-        *d_r = __rev_ad_w14;
-        double __rev_ad_w13 = __rev_ad_w20;
-        double __rev_ad_w12 = ((((1)/(w12)))*(__rev_ad_w13));
-        double __rev_ad_w11 = (((((((-(w10)))/(std::pow(w11, 2))))*(__rev_ad_w12)))+(((w31)*(__rev_ad_w32))));
-        *d_K = __rev_ad_w11;
-        double __rev_ad_w10 = ((((((w11)/(std::pow(w11, 2))))*(__rev_ad_w12)))+(((w23)*(__rev_ad_w24))));
-        *d_S = __rev_ad_w10;
-        double __rev_ad_w9 = ((w20)*(__rev_ad_w21));
-        double __rev_ad_w8 = ((((-1)/(std::pow(w8, 2))))*(__rev_ad_w9));
-        double __rev_ad_w7 = ((w2)*(__rev_ad_w8));
-        double __rev_ad_w5 = ((((((((((0.5)*(std::pow(w5, -0.5))))*(__rev_ad_w7)))+(((w18)*(__rev_ad_w19)))))+(((w2)*(__rev_ad_w25)))))+(((w29)*(__rev_ad_w30))));
-        double __rev_ad_w4 = ((-1)*(__rev_ad_w5));
-        *d_t = __rev_ad_w4;
-        double __rev_ad_w3 = __rev_ad_w5;
-        *d_T = __rev_ad_w3;
-        double __rev_ad_w2 = ((((((w7)*(__rev_ad_w8)))+(((((2)*(w2)))*(__rev_ad_w16)))))+(((w5)*(__rev_ad_w25))));
-        *d_vol = __rev_ad_w2;
-        return w35;
-}
+    double const w2 = vol;
+    double const w3 = T;
+    double const w4 = t;
+    double const w5 = ((w3)-(w4));
+    double const w7 = std::pow(w5, 0.5);
+    double const w8 = ((w2)*(w7));
+    double const w9 = ((1)/(w8));
+    double const w10 = S;
+    double const w11 = K;
+    double const w12 = ((w10)/(w11));
+    double const w13 = std::log(w12);
+    double const w14 = r;
+    double const w16 = std::pow(w2, 2);
+    double const w17 = ((w16)/(2));
+    double const w18 = ((w14)+(w17));
+    double const w19 = ((w18)*(w5));
+    double const w20 = ((w13)+(w19));
+    double const w21 = ((w9)*(w20));
+    double const w22 = std::erfc(-(w21)/std::sqrt(2))/2;
+    double const w23 = ((w22)*(w10));
+    double const w24 = ((w2)*(w5));
+    double const w25 = ((w21)-(w24));
+    double const w26 = std::erfc(-(w25)/std::sqrt(2))/2;
+    double const w27 = (-(w14));
+    double const w28 = ((w27)*(w5));
+    double const w29 = std::exp(w28);
+    double const w30 = ((w11)*(w29));
+    double const w31 = ((w26)*(w30));
+    double const value = ((w23)-(w31));
+    // w2
+    // w3
+    // w4
+    // w5
+    // w7
+    // w8
+    // w9
+    // w10
+    // w11
+    // w12
+    // w13
+    // w14
+    // w16
+    // w17
+    // w18
+    // w19
+    // w20
+    // w21
+    // w22
+    // w23
+    // w24
+    // w25
+    // w26
+    // w27
+    // w28
+    // w29
+    // w30
+    // w31
+    // value
+    double const __rev_ad_value = 1;
+    // BEGIN ((-1)*(__rev_ad_value))
+    double const w33 = __rev_ad_value;
+    // END ((-1)*(__rev_ad_value))
+    double const __rev_ad_w31 = ((-1)*(w33));
+    // BEGIN ((std::erfc(-(((((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))))-(((vol)*(((T)-(t)))))))/std::sqrt(2))/2)*(__rev_ad_w31))
+    double const w34 = __rev_ad_w31;
+    // END ((std::erfc(-(((((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))))-(((vol)*(((T)-(t)))))))/std::sqrt(2))/2)*(__rev_ad_w31))
+    double const __rev_ad_w30 = ((w26)*(w34));
+    // BEGIN ((K)*(__rev_ad_w30))
+    double const w35 = __rev_ad_w30;
+    // END ((K)*(__rev_ad_w30))
+    double const __rev_ad_w29 = ((w11)*(w35));
+    // BEGIN ((std::exp((((-(r)))*(((T)-(t))))))*(__rev_ad_w29))
+    double const w36 = __rev_ad_w29;
+    // END ((std::exp((((-(r)))*(((T)-(t))))))*(__rev_ad_w29))
+    double const __rev_ad_w28 = ((w29)*(w36));
+    // BEGIN ((((T)-(t)))*(__rev_ad_w28))
+    double const w37 = __rev_ad_w28;
+    // END ((((T)-(t)))*(__rev_ad_w28))
+    double const __rev_ad_w27 = ((w5)*(w37));
+    // BEGIN ((((K)*(std::exp((((-(r)))*(((T)-(t))))))))*(__rev_ad_w31))
+    // END ((((K)*(std::exp((((-(r)))*(((T)-(t))))))))*(__rev_ad_w31))
+    double const __rev_ad_w26 = ((w30)*(w34));
+    // BEGIN ((((std::exp((-(((0.5)*(std::pow(((((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))))-(((vol)*(((T)-(t)))))), 2)))))))/(2.50663)))*(__rev_ad_w26))
+    double const w38 = std::pow(w25, 2);
+    double const w39 = ((0.5)*(w38));
+    double const w40 = (-(w39));
+    double const w41 = std::exp(w40);
+    double const w43 = ((w41)/(2.50663));
+    double const w44 = __rev_ad_w26;
+    // END ((((std::exp((-(((0.5)*(std::pow(((((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))))-(((vol)*(((T)-(t)))))), 2)))))))/(2.50663)))*(__rev_ad_w26))
+    double const __rev_ad_w25 = ((w43)*(w44));
+    // BEGIN ((-1)*(__rev_ad_w25))
+    double const w45 = __rev_ad_w25;
+    // END ((-1)*(__rev_ad_w25))
+    double const __rev_ad_w24 = ((-1)*(w45));
+    // BEGIN __rev_ad_value
+    // END __rev_ad_value
+    double const __rev_ad_w23 = __rev_ad_value;
+    // BEGIN ((S)*(__rev_ad_w23))
+    double const w46 = __rev_ad_w23;
+    // END ((S)*(__rev_ad_w23))
+    double const __rev_ad_w22 = ((w10)*(w46));
+    // BEGIN ((((((std::exp((-(((0.5)*(std::pow(((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))), 2)))))))/(2.50663)))*(__rev_ad_w22)))+(__rev_ad_w25))
+    double const w47 = std::pow(w21, 2);
+    double const w48 = ((0.5)*(w47));
+    double const w49 = (-(w48));
+    double const w50 = std::exp(w49);
+    double const w51 = ((w50)/(2.50663));
+    double const w52 = __rev_ad_w22;
+    double const w53 = ((w51)*(w52));
+    // END ((((((std::exp((-(((0.5)*(std::pow(((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))), 2)))))))/(2.50663)))*(__rev_ad_w22)))+(__rev_ad_w25))
+    double const __rev_ad_w21 = ((w53)+(w45));
+    // BEGIN ((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(__rev_ad_w21))
+    double const w54 = __rev_ad_w21;
+    // END ((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(__rev_ad_w21))
+    double const __rev_ad_w20 = ((w9)*(w54));
+    // BEGIN __rev_ad_w20
+    // END __rev_ad_w20
+    double const __rev_ad_w19 = __rev_ad_w20;
+    // BEGIN ((((T)-(t)))*(__rev_ad_w19))
+    double const w55 = __rev_ad_w19;
+    // END ((((T)-(t)))*(__rev_ad_w19))
+    double const __rev_ad_w18 = ((w5)*(w55));
+    // BEGIN __rev_ad_w18
+    // END __rev_ad_w18
+    double const __rev_ad_w17 = __rev_ad_w18;
+    // BEGIN ((((2)/(4)))*(__rev_ad_w17))
+    double const w57 = ((2)/(4));
+    double const w58 = __rev_ad_w17;
+    // END ((((2)/(4)))*(__rev_ad_w17))
+    double const __rev_ad_w16 = ((w57)*(w58));
+    // BEGIN ((__rev_ad_w18)+((((-(1)))*(__rev_ad_w27))))
+    double const w59 = __rev_ad_w18;
+    double const w60 = (-(1));
+    double const w61 = __rev_ad_w27;
+    double const w62 = ((w60)*(w61));
+    // END ((__rev_ad_w18)+((((-(1)))*(__rev_ad_w27))))
+    double const __rev_ad_w14 = ((w59)+(w62));
+    *d_r = __rev_ad_w14;
+    // BEGIN __rev_ad_w20
+    // END __rev_ad_w20
+    double const __rev_ad_w13 = __rev_ad_w20;
+    // BEGIN ((((1)/(((S)/(K)))))*(__rev_ad_w13))
+    double const w63 = ((1)/(w12));
+    double const w64 = __rev_ad_w13;
+    // END ((((1)/(((S)/(K)))))*(__rev_ad_w13))
+    double const __rev_ad_w12 = ((w63)*(w64));
+    // BEGIN (((((((-(S)))/(std::pow(K, 2))))*(__rev_ad_w12)))+(((std::exp((((-(r)))*(((T)-(t))))))*(__rev_ad_w30))))
+    double const w65 = (-(w10));
+    double const w66 = std::pow(w11, 2);
+    double const w67 = ((w65)/(w66));
+    double const w68 = __rev_ad_w12;
+    double const w69 = ((w67)*(w68));
+    double const w70 = ((w29)*(w35));
+    // END (((((((-(S)))/(std::pow(K, 2))))*(__rev_ad_w12)))+(((std::exp((((-(r)))*(((T)-(t))))))*(__rev_ad_w30))))
+    double const __rev_ad_w11 = ((w69)+(w70));
+    *d_K = __rev_ad_w11;
+    // BEGIN ((((((K)/(std::pow(K, 2))))*(__rev_ad_w12)))+(((std::erfc(-(((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))))/std::sqrt(2))/2)*(__rev_ad_w23))))
+    double const w71 = ((w11)/(w66));
+    double const w72 = ((w71)*(w68));
+    double const w73 = ((w22)*(w46));
+    // END ((((((K)/(std::pow(K, 2))))*(__rev_ad_w12)))+(((std::erfc(-(((((1)/(((vol)*(std::pow(((T)-(t)), 0.5))))))*(((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))))/std::sqrt(2))/2)*(__rev_ad_w23))))
+    double const __rev_ad_w10 = ((w72)+(w73));
+    *d_S = __rev_ad_w10;
+    // BEGIN ((((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))*(__rev_ad_w21))
+    // END ((((std::log(((S)/(K))))+(((((r)+(((std::pow(vol, 2))/(2)))))*(((T)-(t)))))))*(__rev_ad_w21))
+    double const __rev_ad_w9 = ((w20)*(w54));
+    // BEGIN ((((-1)/(std::pow(((vol)*(std::pow(((T)-(t)), 0.5))), 2))))*(__rev_ad_w9))
+    double const w74 = std::pow(w8, 2);
+    double const w75 = ((-1)/(w74));
+    double const w76 = __rev_ad_w9;
+    // END ((((-1)/(std::pow(((vol)*(std::pow(((T)-(t)), 0.5))), 2))))*(__rev_ad_w9))
+    double const __rev_ad_w8 = ((w75)*(w76));
+    // BEGIN ((vol)*(__rev_ad_w8))
+    double const w77 = __rev_ad_w8;
+    // END ((vol)*(__rev_ad_w8))
+    double const __rev_ad_w7 = ((w2)*(w77));
+    // BEGIN ((((((((((0.5)*(std::pow(((T)-(t)), -0.5))))*(__rev_ad_w7)))+(((((r)+(((std::pow(vol, 2))/(2)))))*(__rev_ad_w19)))))+(((vol)*(__rev_ad_w24)))))+((((-(r)))*(__rev_ad_w28))))
+    double const w79 = std::pow(w5, -0.5);
+    double const w80 = ((0.5)*(w79));
+    double const w81 = __rev_ad_w7;
+    double const w82 = ((w80)*(w81));
+    double const w83 = ((w18)*(w55));
+    double const w84 = ((w82)+(w83));
+    double const w85 = __rev_ad_w24;
+    double const w86 = ((w2)*(w85));
+    double const w87 = ((w84)+(w86));
+    double const w88 = ((w27)*(w37));
+    // END ((((((((((0.5)*(std::pow(((T)-(t)), -0.5))))*(__rev_ad_w7)))+(((((r)+(((std::pow(vol, 2))/(2)))))*(__rev_ad_w19)))))+(((vol)*(__rev_ad_w24)))))+((((-(r)))*(__rev_ad_w28))))
+    double const __rev_ad_w5 = ((w87)+(w88));
+    // BEGIN ((-1)*(__rev_ad_w5))
+    double const w89 = __rev_ad_w5;
+    // END ((-1)*(__rev_ad_w5))
+    double const __rev_ad_w4 = ((-1)*(w89));
+    *d_t = __rev_ad_w4;
+    // BEGIN __rev_ad_w5
+    // END __rev_ad_w5
+    double const __rev_ad_w3 = __rev_ad_w5;
+    *d_T = __rev_ad_w3;
+    // BEGIN ((((((std::pow(((T)-(t)), 0.5))*(__rev_ad_w8)))+(((((2)*(vol)))*(__rev_ad_w16)))))+(((((T)-(t)))*(__rev_ad_w24))))
+    double const w90 = ((w7)*(w77));
+    double const w91 = ((2)*(w2));
+    double const w92 = __rev_ad_w16;
+    double const w93 = ((w91)*(w92));
+    double const w94 = ((w90)+(w93));
+    double const w95 = ((w5)*(w85));
+    // END ((((((std::pow(((T)-(t)), 0.5))*(__rev_ad_w8)))+(((((2)*(vol)))*(__rev_ad_w16)))))+(((((T)-(t)))*(__rev_ad_w24))))
+    double const __rev_ad_w2 = ((w94)+(w95));
+    *d_vol = __rev_ad_w2;
+    return value;
 
+}
 
 int main(){
         double t   = 0.0;

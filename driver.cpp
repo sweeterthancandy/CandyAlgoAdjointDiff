@@ -644,10 +644,26 @@ struct RemoveEndgenousFolder{
         }
 };
 
+struct RemoveEndo : OperatorTransform{
+        virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr){
+                auto candidate = ptr->Clone(shared_from_this());
+                if( candidate->Kind() == OPKind_EndgenousSymbol ){
+                        if( auto typed = std::dynamic_pointer_cast<EndgenousSymbol>(candidate)){
+                                return typed->Expr();
+                        }
+                }
+                return candidate;
+        }
+};
 struct RemapUnique : OperatorTransform{
         explicit RemapUnique(std::string const& prefix = "__symbol_")
                 : prefix_{prefix}
-        {}
+        {
+                std::cerr << " RemapUnique()\n";
+        }
+        ~RemapUnique(){
+                std::cerr << "~RemapUnique()\n";
+        }
         void mutate_prefix(std::string const& prefix){
                 prefix_ = prefix;
         }
@@ -810,16 +826,30 @@ enum InstructionKind{
         Instr_VarDecl,
         Instr_PointerAssignment,
         Instr_Return,
+        Instr_Comment,
 };
 struct Instruction{
         explicit Instruction(InstructionKind kind)
                 :kind_(kind)
         {}
-        InstructionKind Kind()const{ return kind_; }
         virtual ~Instruction()=default;
+        InstructionKind Kind()const{ return kind_; }
         virtual void EmitCode(std::ostream& out)const=0;
 private:
         InstructionKind kind_;
+};
+struct InstructionComment : Instruction{
+        InstructionComment(std::vector<std::string> const& text)
+                :Instruction{Instr_Comment}
+                ,text_{text}
+        {}
+        virtual void EmitCode(std::ostream& out)const{
+                for(auto const& comment : text_){
+                        out << "    // " << comment << "\n";
+                }
+        }
+private:
+        std::vector<std::string> text_;
 };
 struct InstructionDeclareVariable : Instruction{
         InstructionDeclareVariable(std::string const& name, std::shared_ptr<Operator> op)
@@ -902,7 +932,9 @@ struct DataFlowGraph{
         void CollectADFlow(std::vector<std::shared_ptr<EndgenousSymbol> > & computation);
         void Display(std::ostream& out = std::cout)const;
         void EmitInstructions(InstructionBlock& B)const;
-        void EmitADInstructions(InstructionBlock& B)const;
+        void EmitADInstructions(Operator::DependentsProfile& information,
+                                std::shared_ptr<RemapUnique> RU,
+                                InstructionBlock& B)const;
 private:
         std::vector<std::shared_ptr<DataFlow> > rank_;
         std::unordered_map<std::string,std::shared_ptr<DataFlow> > index_; 
@@ -920,15 +952,53 @@ struct DataFlow{
         void AddChild(DataFlow* ptr){
                 children_.push_back(ptr);
         }
+        #if 0
+        void EmitADInstructionsImpl(Operator::DependentsProfile& information, std::shared_ptr<RemapUnique> RU, InstructionBlock& B)const
+        {
+                auto remapped = sym_->Expr()->Clone(RU);
+
+                auto dependents = remapped->DepthFirstAnySymbolicDependency();
+                for(auto const& dep : dependents.DepthFirst ){
+                        if( information.Set.count(dep) == 1 )
+                                continue;
+                        information.Set.insert(dep);
+                        B.Add(std::make_shared<InstructionDeclareVariable>(
+                                        dep->Name(),
+                                        dep->Expr()));
+                }
+
+                auto exo = std::reinterpret_pointer_cast<EndgenousSymbol>(remapped);
+
+                B.Add(std::make_shared<InstructionDeclareVariable>(
+                                exo->Name(),
+                                exo->Expr()));
+                if( children_.empty() ){
+                        std::vector<std::string> deps;
+                        auto dependents = sym_->DepthFirstAnySymbolicDependencyAndThis();
+                        for(auto const& ptr : dependents.DepthFirst ){
+                                deps.push_back(ptr->Name());
+                        }
+                        B.Add(std::make_shared<InstructionComment>(deps));
+                        B.Add(std::make_shared<InstructionReturn>(sym_->Name()));
+                }
+        }
+        #endif
         void EmitInstructionsImpl(InstructionBlock& B)const{
                 B.Add(std::make_shared<InstructionDeclareVariable>(
                                 sym_->Name(),
                                 sym_->Expr()));
                 if( children_.empty() ){
+                        std::vector<std::string> deps;
+                        auto dependents = sym_->DepthFirstAnySymbolicDependencyAndThis();
+                        for(auto const& ptr : dependents.DepthFirst ){
+                                deps.push_back(ptr->Name());
+                        }
+                        B.Add(std::make_shared<InstructionComment>(deps));
                         B.Add(std::make_shared<InstructionReturn>(sym_->Name()));
                 }
         }
-        void EmitADInstructionsImpl(InstructionBlock& B)const{
+        void EmitADInstructionsImpl(Operator::DependentsProfile& information, std::shared_ptr<RemapUnique> RU, InstructionBlock& B)const
+        {
                 auto make_ad_sym = [](auto const& name){
                         return "__rev_ad_" + name;
                 };
@@ -939,6 +1009,7 @@ struct DataFlow{
                                 Constant::Make(1.0)
                         ));
                 } else {
+                        static auto removed_end = std::make_shared<RemoveEndo>();
                         static Transform::FoldZero constant_fold;
                         // forward
                         auto make_node_back = [&](auto child){
@@ -956,10 +1027,35 @@ struct DataFlow{
                                         make_node_back(children_[idx])
                                 );
                         }
+                
+                        #if 0
+                        auto remapped = head;
+                        #else
+                        std::stringstream cpp_expr;
+                        head = head->Clone(removed_end);
+                        head->EmitCode(cpp_expr);
+                        //head = remove_endogous.Fold(head);
+                        //auto folded = constant_fold.Fold(head);
+                        auto remapped = head->Clone(RU);
+
+                        B.Add(std::make_shared<InstructionComment>(std::vector<std::string>{"BEGIN " + cpp_expr.str()}));
+                        auto dependents = remapped->DepthFirstAnySymbolicDependency();
+                        for(auto const& dep : dependents.DepthFirst ){
+                                if( information.Set.count(dep) == 1 )
+                                        continue;
+                                information.Set.insert(dep);
+                                B.Add(std::make_shared<InstructionDeclareVariable>(
+                                                dep->Name(),
+                                                dep->Expr()));
+                                
+                        }
+                        B.Add(std::make_shared<InstructionComment>(std::vector<std::string>{"END " + cpp_expr.str()}));
+                        #endif
+
                                 
                         B.Add(std::make_shared<InstructionDeclareVariable>(
                                 make_ad_sym(sym_->Name()),
-                                head));
+                                remapped));
                 }
 
                 if( parents_.size() == 0 ){
@@ -1223,10 +1319,13 @@ void DataFlowGraph::EmitInstructions(InstructionBlock& B)const{
                 flow->EmitInstructionsImpl(B);
         }
 }
-void DataFlowGraph::EmitADInstructions(InstructionBlock& B)const{
+void DataFlowGraph::EmitADInstructions(Operator::DependentsProfile& information,
+                                       std::shared_ptr<RemapUnique> RU,
+                                       InstructionBlock& B)const
+{
         for(size_t idx=rank_.size();idx;){
                 --idx;
-                rank_[idx]->EmitADInstructionsImpl(B);
+                rank_[idx]->EmitADInstructionsImpl(information, RU, B);
         }
 }
 void DataFlowGraph::EmitCppCode(std::ostream& out)const{
@@ -1348,7 +1447,8 @@ void reverse_test(){
         InstructionBlock B;
         graph.EmitInstructions(B);
 
-        graph.EmitADInstructions(B);
+        std::cout << "dependents.Set.size() => " << dependents.Set.size() << "\n"; // __CandyPrint__(cxx-print-scalar,dependents.Set.size())
+        graph.EmitADInstructions(dependents, unique_mapper, B);
 
 
 
