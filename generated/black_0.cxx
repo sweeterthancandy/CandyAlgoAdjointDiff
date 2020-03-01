@@ -645,7 +645,7 @@ int main(){
                         black_fd(epsilon, t, 0, T  , 0, r  , 0, S  , 0, K  , 0, vol, 1);
                 }
                 std::string fd_time = timer.format(4, "%w");
-                std::cout << N << "," << fd_time << "," << ad_time << "," << ad_opt_time << "," << ad_better << "," << ad_backwards << "\n";
+                std::cerr << N << "," << fd_time << "," << ad_time << "," << ad_opt_time << "," << ad_better << "," << ad_backwards << "\n";
         }
 
 }
