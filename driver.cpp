@@ -645,6 +645,9 @@ struct RemoveEndgenousFolder{
 };
 
 struct RemapUnique : OperatorTransform{
+        explicit RemapUnique(std::string const& prefix = "__symbol_")
+                : prefix_{prefix}
+        {}
         virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr){
 
                 auto candidate = ptr->Clone(shared_from_this());
@@ -658,13 +661,16 @@ struct RemapUnique : OperatorTransform{
                 if( iter != ops_.end() )
                         return iter->second;
 
-                if( candidate->Kind() != OPKind_EndgenousSymbol &&
+                if( 
+                    candidate->Kind() != OPKind_EndgenousSymbol &&
+                    #if 0
                     candidate->Kind() != OPKind_ExogenousSymbol &&
+                    #endif
                     candidate->Kind() != OPKind_Constant )
                 {
 
                         std::stringstream ss;
-                        ss << "__symbol_" << ops_.size();
+                        ss << prefix_ << ops_.size();
                         auto endogous_sym = EndgenousSymbol::Make(ss.str(), candidate); 
                         
                         ops_[key] = endogous_sym;
@@ -675,6 +681,7 @@ struct RemapUnique : OperatorTransform{
                 }
         }
 private:
+        std::string prefix_;
         std::map<
                 std::tuple<
                         std::string,
@@ -792,18 +799,110 @@ void black_scholes_template_opt(){
         out << "}\n";
 
 
-
-
-
-
 }
 
+struct DataFlow;
 
+struct DataFlowGraph{
+        void Add(std::shared_ptr<DataFlow> const& flow);
+        void EmitDot(std::ostream& out)const;
+private:
+        std::vector<std::shared_ptr<DataFlow> > rank_;
+        std::unordered_map<std::string,std::shared_ptr<DataFlow> > index_; 
+};
+
+struct DataFlow{
+        DataFlow(std::shared_ptr<EndgenousSymbol> sym)
+                :sym_(sym)
+        {}
+        auto Expr()const{ return sym_; }
+        auto Name()const{ return sym_->Name(); }
+        std::string CppCode()const{
+                std::stringstream code;
+                code << "double " << sym_->Name() << " = ";
+                sym_->Expr()->EmitCode(code);
+                code << ";";
+                return code.str();
+        }
+        void AddParent(DataFlow* ptr){
+                parents_.push_back(ptr);
+        }
+        void AddChild(DataFlow* ptr){
+                children_.push_back(ptr);
+        }
+        void EmitDot(std::ostream& out)const{
+                out << sym_->Name() << "[label=\"";
+                out << sym_->Name() << " = ";
+                sym_->Expr()->EmitCode(out);
+                out << "\"];\n";
+                for(auto const& ptr : parents_){
+                        out << sym_->Name() << " -> " << ptr->Name() << ";\n";
+                }
+        }
+private:
+        std::shared_ptr<EndgenousSymbol> sym_;
+        std::vector<DataFlow*> parents_;
+        std::vector<DataFlow*> children_;
+};
+        
+void DataFlowGraph::EmitDot(std::ostream& out)const{
+        for(auto const& flow : rank_){
+                flow->EmitDot(out);
+        }
+}
+
+void DataFlowGraph::Add(std::shared_ptr<DataFlow> const& flow){
+        rank_.push_back(flow);
+        index_[flow->Name()] = flow;
+        auto dependents = flow->Expr()->DepthFirstAnySymbolicDependencyNoRecurse();
+
+        auto link_dependency = [&](auto& child, auto& parent){
+                child->AddParent(parent.get());
+                parent->AddChild(child.get());
+        };
+
+        for(auto const& ptr : dependents.DepthFirst ){
+                auto iter = index_.find(ptr->Name());
+                if( iter == index_.end() )
+                        throw std::domain_error("cant find node");
+                link_dependency(flow, iter->second);
+        }
+}
+
+void reverse_test(){
+        using namespace Frontend;
+        using Frontend::Log;
+        auto x1 = Var("x1");
+        auto x2 = Var("x2");
+        auto expr = Break("y", x1 * x2 + Log(x1));
+
+        auto unique_mapper = std::make_shared<RemapUnique>("w");
+        auto unique        = expr.as_operator_()->Clone(unique_mapper);
+        unique->Display();
+                
+        auto dependents = unique->DepthFirstAnySymbolicDependency();
+        std::vector<std::shared_ptr<DataFlow> > flow;
+        DataFlowGraph graph;
+        for(auto const& dep : dependents.DepthFirst){
+                auto ptr = std::make_shared<DataFlow>(dep);
+                flow.push_back(ptr);
+                graph.Add(ptr);
+        }
+        for(auto const& step : flow){
+                step->Expr()->Display();
+        }
+        for(auto const& step : flow){
+                std::cout << step->CppCode() << "\n";
+        }
+
+        graph.EmitDot(std::cout);
+}
 
 int main(){
         //black_scholes();
         //black_scholes_frontend();
         //black_scholes_template();
-        black_scholes_template_opt();
+        //black_scholes_template_opt();
 
+        reverse_test();
 }

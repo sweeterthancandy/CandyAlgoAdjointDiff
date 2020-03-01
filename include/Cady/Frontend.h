@@ -131,6 +131,10 @@ namespace Frontend{
         inline auto Var(std::string const& name){
                 return WithOperators{ExogenousSymbol::Make(name)};
         }
+        template<class Expr>
+        inline auto Break(std::string const& name, Expr&& expr){
+                return WithOperators{EndgenousSymbol::Make(name, AsOperator(expr))};
+        }
         template<class T>
         inline auto Log(T&& arg){
                 return WithOperators{ Log::Make( AsOperator(arg) ) };

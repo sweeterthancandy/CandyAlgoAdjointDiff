@@ -189,19 +189,26 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 std::vector<std::shared_ptr<EndgenousSymbol > >        DepthFirst;
                 std::unordered_set<std::shared_ptr<EndgenousSymbol > > Set;
         };
-        DependentsProfile DepthFirstAnySymbolicDependency(){
+        DependentsProfile DepthFirstAnySymbolicDependencyNoRecurse(){
                 DependentsProfile result;
-                CollectDepthFirstAnySymbolicDependency(result);
+                CollectDepthFirstAnySymbolicDependency(result, false);
                 return result;
         }
-        void CollectDepthFirstAnySymbolicDependency(DependentsProfile& mem){
+        DependentsProfile DepthFirstAnySymbolicDependency(){
+                DependentsProfile result;
+                CollectDepthFirstAnySymbolicDependency(result, true);
+                return result;
+        }
+        void CollectDepthFirstAnySymbolicDependency(DependentsProfile& mem, bool recursive){
                 std::vector<std::shared_ptr<Operator > > stack{shared_from_this()};
                 for(;stack.size();){
                         auto head = stack.back();
                         stack.pop_back();
                         for(auto& ptr : head->children_){
                                 if( ptr->Kind() == OPKind_EndgenousSymbol ){
-                                        ptr->CollectDepthFirstAnySymbolicDependency(mem);
+                                        if( recursive ){
+                                                ptr->CollectDepthFirstAnySymbolicDependency(mem, true);
+                                        }
                                         mem.Add(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
                                 } else {
                                         stack.push_back(ptr);
