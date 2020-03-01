@@ -816,7 +816,7 @@ struct Instruction{
         {}
         InstructionKind Kind()const{ return kind_; }
         virtual ~Instruction()=default;
-        virtual std::string EmitCode(std::ostream& out)const=0;
+        virtual void EmitCode(std::ostream& out)const=0;
 private:
         InstructionKind kind_;
 };
@@ -826,7 +826,7 @@ struct InstructionDeclareVariable : Instruction{
                 ,name_(name)
                 ,op_(op)
         {}
-        virtual std::string EmitCode(std::ostream& out)const{
+        virtual void EmitCode(std::ostream& out)const{
                 out << "    double const " << name_ << " = ";
                 op_->EmitCode(out);
                 out << ";\n";
@@ -841,7 +841,7 @@ struct InstructionReturn : Instruction{
                 :Instruction{Instr_Return}
                 ,name_(name)
         {}
-        virtual std::string EmitCode(std::ostream& out)const{
+        virtual void EmitCode(std::ostream& out)const{
                 out << "    return " << name_ << ";\n";
         }
 private:
@@ -851,6 +851,11 @@ private:
 struct InstructionBlock : std::vector<std::shared_ptr<Instruction> >{
         void Add(std::shared_ptr<Instruction> instr){
                 push_back(instr);
+        }
+        virtual void EmitCode(std::ostream& out)const{
+                for(auto const& ptr : *this){
+                        ptr->EmitCode(out);
+                }
         }
 };
 
@@ -896,6 +901,9 @@ struct DataFlow{
                 B.Add(std::make_shared<InstructionDeclareVariable>(
                                 sym_->Name(),
                                 sym_->Expr()));
+                if( children_.empty() ){
+                        B.Add(std::make_shared<InstructionReturn>(sym_->Name()));
+                }
         }
         void EmitEvalCodeImpl(std::ostream& out)const{
                 out << "double " << sym_->Name() << " = ";
@@ -1132,6 +1140,10 @@ void DataFlowGraph::Display(std::ostream& out)const{
         }
 }
 void DataFlowGraph::EmitInstructions(InstructionBlock& B)const{
+        for(auto const& flow : rank_){
+                flow->EmitInstructionsImpl(B);
+        }
+}
 void DataFlowGraph::EmitCppCode(std::ostream& out)const{
         out << R"(
 
@@ -1225,10 +1237,10 @@ void reverse_test(){
         #endif
 
         auto unique_mapper = std::make_shared<RemapUnique>("w");
-        auto unique        = expr->Clone(unique_mapper);
+        auto unique        = Break("value", expr->Clone(unique_mapper)).as_operator_();
         //unique->Display();
                 
-        auto dependents = unique->DepthFirstAnySymbolicDependency();
+        auto dependents = unique->DepthFirstAnySymbolicDependencyAndThis();
         std::vector<std::shared_ptr<DataFlow> > flow;
         DataFlowGraph graph;
         for(auto const& dep : dependents.DepthFirst){
@@ -1248,6 +1260,12 @@ void reverse_test(){
         std::system("dot -Tpng graph.dot -o graph.png");
 
 
+        InstructionBlock B;
+        graph.EmitInstructions(B);
+
+        B.EmitCode(std::cout);
+
+        #if 0
         std::vector<std::shared_ptr<EndgenousSymbol> > ad_computation;
         graph.Display();
         graph.CollectADFlow(ad_computation);
@@ -1284,6 +1302,7 @@ void reverse_test(){
                 ad_graph.EmitCppCode(code);
                 code.close();
         }while(0);
+        #endif
 
 }
 
