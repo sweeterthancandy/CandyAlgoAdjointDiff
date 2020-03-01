@@ -808,6 +808,7 @@ void black_scholes_template_opt(){
 
 enum InstructionKind{
         Instr_VarDecl,
+        Instr_PointerAssignment,
         Instr_Return,
 };
 struct Instruction{
@@ -836,6 +837,19 @@ private:
         std::string name_;
         std::shared_ptr<Operator> op_;
 };
+struct InstructionPointerAssignment : Instruction{
+        InstructionPointerAssignment(std::string const& name, std::string const& r_value)
+                :Instruction{Instr_PointerAssignment}
+                ,name_(name)
+                ,r_value_{r_value}
+        {}
+        virtual void EmitCode(std::ostream& out)const{
+                out << "    *" << name_ << " = " << r_value_ << ";\n";
+        }
+private:
+        std::string name_;
+        std::string r_value_;
+};
 struct InstructionReturn : Instruction{
         InstructionReturn(std::string const& name)
                 :Instruction{Instr_Return}
@@ -850,7 +864,15 @@ private:
 
 struct InstructionBlock : std::vector<std::shared_ptr<Instruction> >{
         void Add(std::shared_ptr<Instruction> instr){
-                push_back(instr);
+                // quick hack for now
+                if( size() > 0 && back()->Kind() == Instr_Return ){
+                        auto tmp = back();
+                        pop_back();
+                        push_back(instr);
+                        push_back(tmp);
+                } else {
+                        push_back(instr);
+                }
         }
         virtual void EmitCode(std::ostream& out)const{
                 for(auto const& ptr : *this){
@@ -880,6 +902,7 @@ struct DataFlowGraph{
         void CollectADFlow(std::vector<std::shared_ptr<EndgenousSymbol> > & computation);
         void Display(std::ostream& out = std::cout)const;
         void EmitInstructions(InstructionBlock& B)const;
+        void EmitADInstructions(InstructionBlock& B)const;
 private:
         std::vector<std::shared_ptr<DataFlow> > rank_;
         std::unordered_map<std::string,std::shared_ptr<DataFlow> > index_; 
@@ -904,6 +927,62 @@ struct DataFlow{
                 if( children_.empty() ){
                         B.Add(std::make_shared<InstructionReturn>(sym_->Name()));
                 }
+        }
+        void EmitADInstructionsImpl(InstructionBlock& B)const{
+                auto make_ad_sym = [](auto const& name){
+                        return "__rev_ad_" + name;
+                };
+
+                if( children_.size() == 0 ){
+                        B.Add(std::make_shared<InstructionDeclareVariable>(
+                                make_ad_sym(sym_->Name()),
+                                Constant::Make(1.0)
+                        ));
+                } else {
+                        static Transform::FoldZero constant_fold;
+                        // forward
+                        auto make_node_back = [&](auto child){
+                                return constant_fold.Fold(
+                                        BinaryOperator::Mul(
+                                                child->Expr()->Expr()->Diff(sym_->Name()),
+                                                ExogenousSymbol::Make(make_ad_sym(child->Name()))
+                                        )
+                                );
+                        };
+                        std::shared_ptr<Operator> head = make_node_back(children_[0]);
+                        for(size_t idx=1;idx<children_.size();++idx){
+                                head = BinaryOperator::Add(
+                                        head,
+                                        make_node_back(children_[idx])
+                                );
+                        }
+                                
+                        B.Add(std::make_shared<InstructionDeclareVariable>(
+                                make_ad_sym(sym_->Name()),
+                                head));
+                }
+
+                if( parents_.size() == 0 ){
+                        auto make_ptr_sym = [](auto const& name){
+                                return "d_" + name;
+                        };
+                        auto param_name = std::dynamic_pointer_cast<ExogenousSymbol>(sym_->Expr());
+                        B.Add(std::make_shared<InstructionPointerAssignment>(
+                                        make_ptr_sym(param_name->Name()),
+                                        make_ad_sym(sym_->Name())));
+                }
+
+
+#if 0
+
+                auto make_ptr_sym = [](auto const& name){
+                        return "d_" + name;
+                };
+                if( parents_.empty() ){
+                        auto param_name = std::dynamic_pointer_cast<ExogenousSymbol>(sym_->Expr());
+                        out << "*" << make_ptr_sym(param_name->Name()) << " = " << make_ad_sym(sym_->Name()) << ";\n";
+                }
+#endif
         }
         void EmitEvalCodeImpl(std::ostream& out)const{
                 out << "double " << sym_->Name() << " = ";
@@ -1144,6 +1223,12 @@ void DataFlowGraph::EmitInstructions(InstructionBlock& B)const{
                 flow->EmitInstructionsImpl(B);
         }
 }
+void DataFlowGraph::EmitADInstructions(InstructionBlock& B)const{
+        for(size_t idx=rank_.size();idx;){
+                --idx;
+                rank_[idx]->EmitADInstructionsImpl(B);
+        }
+}
 void DataFlowGraph::EmitCppCode(std::ostream& out)const{
         out << R"(
 
@@ -1263,7 +1348,51 @@ void reverse_test(){
         InstructionBlock B;
         graph.EmitInstructions(B);
 
-        B.EmitCode(std::cout);
+        graph.EmitADInstructions(B);
+
+
+
+        std::ofstream code("black.cpp");
+        code << R"(
+
+#include <cstdio>
+#include <cmath>
+#include <iostream>
+
+double black(double t, double* d_t, double T, double* d_T, double r, double* d_r, double S, double* d_S, double K, double* d_K, double vol, double* d_vol){
+)";
+
+        B.EmitCode(code);
+        code <<
+R"(
+}
+
+int main(){
+        double t   = 0.0;
+        double T   = 10.0;
+        double r   = 0.04;
+        double S   = 50;
+        double K   = 60;
+        double vol = 0.2;
+
+        double d_t = 0.0;
+        double d_T = 0.0;
+        double d_r = 0.0;
+        double d_S = 0.0;
+        double d_K = 0.0;
+        double d_vol = 0.0;
+        double value = black( t  , &d_t, T  , &d_T, r  , &d_r, S  , &d_S, K  , &d_K, vol, &d_vol);
+
+        std::cout << "black = " << value << "\n";
+        std::cout << "d_t   = " << d_t << "\n";
+        std::cout << "d_T   = " << d_T << "\n";
+        std::cout << "d_r   = " << d_r << "\n";
+        std::cout << "d_S   = " << d_S << "\n";
+        std::cout << "d_K   = " << d_K << "\n";
+        std::cout << "d_vol = " << d_vol << "\n";
+}
+)";
+
 
         #if 0
         std::vector<std::shared_ptr<EndgenousSymbol> > ad_computation;
