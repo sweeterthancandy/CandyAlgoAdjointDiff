@@ -831,12 +831,33 @@ struct DataFlow{
                 children_.push_back(ptr);
         }
         void EmitDot(std::ostream& out)const{
-                out << sym_->Name() << "[label=\"";
+                out << sym_->Name() << "[shape=record, label=\"<expr>";
                 out << sym_->Name() << " = ";
                 sym_->Expr()->EmitCode(out);
+
+                #if 0
+                for(auto const& ptr : parents_){
+                        auto name = ptr->Name();
+                        auto diff = sym_->Expr()->Diff(name);
+                        Transform::FoldZero constant_fold;
+                        auto folded = constant_fold.Fold(diff);
+                        out << "|D[" << name << "] = ";
+                        folded->EmitCode(out);
+                }
+                #endif
+                out << "|<d>jkjk";
                 out << "\"];\n";
                 for(auto const& ptr : parents_){
-                        out << sym_->Name() << " -> " << ptr->Name() << ";\n";
+                        
+                        auto name = ptr->Name();
+
+                        auto diff = sym_->Expr()->Diff(name);
+                        Transform::FoldZero constant_fold;
+                        auto folded = constant_fold.Fold(diff);
+
+                        out << sym_->Name() << ":expr -> " << name << ":expr [label=\"";
+                        folded->EmitCode(out);
+                        out << "\"];\n";
                 }
         }
 private:
