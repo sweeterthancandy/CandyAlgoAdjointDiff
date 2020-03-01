@@ -803,9 +803,19 @@ void black_scholes_template_opt(){
 
 struct DataFlow;
 
+struct DotCompiler{
+        DotCompiler(){
+                order.emplace_back();
+        }
+        std::stringstream nodes;
+        std::stringstream edges;
+        std::vector<std::vector<std::string> > order;
+};
+
 struct DataFlowGraph{
         void Add(std::shared_ptr<DataFlow> const& flow);
         void EmitDot(std::ostream& out)const;
+        void EmitCppCode(std::ostream& out)const;
 private:
         std::vector<std::shared_ptr<DataFlow> > rank_;
         std::unordered_map<std::string,std::shared_ptr<DataFlow> > index_; 
@@ -817,23 +827,33 @@ struct DataFlow{
         {}
         auto Expr()const{ return sym_; }
         auto Name()const{ return sym_->Name(); }
-        std::string CppCode()const{
-                std::stringstream code;
-                code << "double " << sym_->Name() << " = ";
-                sym_->Expr()->EmitCode(code);
-                code << ";";
-                return code.str();
-        }
         void AddParent(DataFlow* ptr){
                 parents_.push_back(ptr);
         }
         void AddChild(DataFlow* ptr){
                 children_.push_back(ptr);
         }
-        void EmitDot(std::ostream& out)const{
-                out << sym_->Name() << "[shape=record, label=\"<expr>";
-                out << sym_->Name() << " = ";
+        void EmitEvalCodeImpl(std::ostream& out)const{
+                out << "double " << sym_->Name() << " = ";
                 sym_->Expr()->EmitCode(out);
+                out << ";\n";
+        }
+        void EmitReverseADCodeImpl(std::ostream& out)const{
+                #if 0
+                out << "double " << "_rev_ad_" << sym_->Name() << " = ";
+                out << ";\n";
+                #endif
+        }
+
+        void EmitDot(DotCompiler& compiler)const{
+                if( parents_.size() ){
+                        compiler.order.emplace_back(std::vector<std::string>{sym_->Name()});
+                } else {
+                        compiler.order[0].push_back(sym_->Name());
+                }
+                compiler.nodes << sym_->Name() << "[shape=record, label=\"<expr>";
+                compiler.nodes << sym_->Name() << " = ";
+                sym_->Expr()->EmitCode(compiler.nodes);
 
                 #if 0
                 for(auto const& ptr : parents_){
@@ -841,14 +861,16 @@ struct DataFlow{
                         auto diff = sym_->Expr()->Diff(name);
                         Transform::FoldZero constant_fold;
                         auto folded = constant_fold.Fold(diff);
-                        out << "|D[" << name << "] = ";
-                        folded->EmitCode(out);
+                        compiler.nodes << "|D[" << name << "] = ";
+                        folded->EmitCode(compiler.nodes);
                 }
                 #endif
                 Transform::FoldZero constant_fold;
-                out << "|<diff>D[" << sym_->Name() << "]";
+                compiler.nodes << "|<diff>D[" << sym_->Name() << "]";
                 if( parents_.size() > 0 ){
-                        auto make_node = [&](auto name){
+
+                        // forward
+                        auto make_node_fwd = [&](auto name){
                                 return constant_fold.Fold(
                                         BinaryOperator::Mul(
                                                 sym_->Expr()->Diff(name),
@@ -856,29 +878,66 @@ struct DataFlow{
                                         )
                                 );
                         };
-                        std::shared_ptr<Operator> head = make_node(parents_[0]->Name());
+                        std::shared_ptr<Operator> head = make_node_fwd(parents_[0]->Name());
                         for(size_t idx=1;idx<parents_.size();++idx){
                                 head = BinaryOperator::Add(
                                         head,
-                                        make_node(parents_[idx]->Name())
+                                        make_node_fwd(parents_[idx]->Name())
                                 );
                         }
                                 
-                        out << " = ";
-                        head->EmitCode(out);
+                        compiler.nodes << " = ";
+                        head->EmitCode(compiler.nodes);
+
+
                 }
-                out << "\"];\n";
+                
+                compiler.nodes << "|<bdiff>B[" << sym_->Name() << "]";
+                if( children_.size() > 0 ){
+                        // forward
+                        auto make_node_back = [&](auto child){
+                                return constant_fold.Fold(
+                                        BinaryOperator::Mul(
+                                                child->Expr()->Expr()->Diff(sym_->Name()),
+                                                ExogenousSymbol::Make("B[" + child->Name() + "]")
+                                        )
+                                );
+                        };
+                        std::shared_ptr<Operator> head = make_node_back(children_[0]);
+                        for(size_t idx=1;idx<children_.size();++idx){
+                                head = BinaryOperator::Add(
+                                        head,
+                                        make_node_back(children_[idx])
+                                );
+                        }
+                                
+                        compiler.nodes << " = ";
+                        head->EmitCode(compiler.nodes);
+                }
+                compiler.nodes << "\"];\n";
+                #if 1
                 for(auto const& ptr : parents_){
-                        
+
                         auto name = ptr->Name();
 
                         auto diff = sym_->Expr()->Diff(name);
                         auto folded = constant_fold.Fold(diff);
 
-                        out << name << ":diff -> " << sym_->Name() << ":diff [label=\"";
-                        folded->EmitCode(out);
-                        out << "\"];\n";
+                        compiler.edges << name << ":diff -> " << sym_->Name() << ":diff [color=blue,label=\"";
+                        folded->EmitCode(compiler.edges);
+                        compiler.edges << "\"];\n";
                 }
+                #endif
+                for(auto const& ptr : children_ ){
+
+                        auto diff = ptr->Expr()->Expr()->Diff(sym_->Name());
+                        auto folded = constant_fold.Fold(diff);
+
+                        compiler.edges << ptr->Name() << ":bdiff -> " << sym_->Name() << ":bdiff [color=red,label=\"";
+                        folded->EmitCode(compiler.edges);
+                        compiler.edges << "\"];\n";
+                }
+
         }
 private:
         std::shared_ptr<EndgenousSymbol> sym_;
@@ -887,9 +946,62 @@ private:
 };
         
 void DataFlowGraph::EmitDot(std::ostream& out)const{
+        DotCompiler dc;
         for(auto const& flow : rank_){
-                flow->EmitDot(out);
+                flow->EmitDot(dc);
         }
+        out << "digraph{\n";
+        out << dc.nodes.str();
+        out << dc.edges.str();
+
+        out << "node [shape = none];\n";
+        for(size_t idx=0;idx!=dc.order.size();++idx){
+                if( idx != 0 )
+                        out << "->";
+                out << idx;
+        }
+        out << "[arrowhead=none,shape=none]\n";
+        for(size_t idx=0;idx!=dc.order.size();++idx){
+                out << "{rank=same;" << idx;
+                for(auto const& name : dc.order[idx] ){
+                        out << "," << name;
+                }
+                out << "}\n";
+        }
+        out << "}\n";
+}
+void DataFlowGraph::EmitCppCode(std::ostream& out)const{
+        out << R"(
+
+#include <cstdio>
+#include <cmath>
+#include <iostream>
+
+double black( double t, double T, double r, double S, double K, double vol){
+)";
+        for(auto const& flow : rank_){
+                flow->EmitEvalCodeImpl(out);
+        }
+        for(size_t idx=rank_.size();idx;){
+                --idx;
+                rank_[idx]->EmitReverseADCodeImpl(out);
+        }
+        out << "return " << rank_.back()->Name() << "\n";
+        out << "}";
+        out <<
+R"(
+
+int main(){
+        double t   = 0.0;
+        double T   = 10.0;
+        double r   = 0.04;
+        double S   = 50;
+        double K   = 60;
+        double vol = 0.2;
+
+        std::cout << black(t,T,r,S,K,vol) << "\n";
+}
+)";
 }
 
 void DataFlowGraph::Add(std::shared_ptr<DataFlow> const& flow){
@@ -913,12 +1025,27 @@ void DataFlowGraph::Add(std::shared_ptr<DataFlow> const& flow){
 void reverse_test(){
         using namespace Frontend;
         using Frontend::Sin;
+        #if 0
         auto x1 = Var("x1");
         auto x2 = Var("x2");
-        auto expr = Break("z", Break("y", x1 * x2 + Sin(x1)));
+        auto expr_ = Break("z", Break("y", x1 * x2 + Sin(x1)));
+        auto expr = expr_.as_operator_();
+        #else
+        auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
+
+        auto as_black = ad_kernel.Evaluate( 
+                DoubleKernel::BuildFromExo("t"),
+                DoubleKernel::BuildFromExo("T"),
+                DoubleKernel::BuildFromExo("r"),
+                DoubleKernel::BuildFromExo("S"),
+                DoubleKernel::BuildFromExo("K"),
+                DoubleKernel::BuildFromExo("vol")
+        );
+        auto expr = as_black.as_operator_();
+        #endif
 
         auto unique_mapper = std::make_shared<RemapUnique>("w");
-        auto unique        = expr.as_operator_()->Clone(unique_mapper);
+        auto unique        = expr->Clone(unique_mapper);
         unique->Display();
                 
         auto dependents = unique->DepthFirstAnySymbolicDependency();
@@ -932,11 +1059,15 @@ void reverse_test(){
         for(auto const& step : flow){
                 step->Expr()->Display();
         }
-        for(auto const& step : flow){
-                std::cout << step->CppCode() << "\n";
-        }
 
-        graph.EmitDot(std::cout);
+        std::ofstream out("graph.dot");
+        graph.EmitDot(out);
+        out.close();
+        std::system("dot -Tpng graph.dot -o graph.png");
+
+        std::ofstream code("black.cpp");
+        graph.EmitCppCode(code);
+        code.close();
 }
 
 int main(){
