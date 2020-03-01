@@ -37,7 +37,7 @@ From this, I can both evaulate in code, or with an embedded dsl
 
 We can generate both forward and backward code
 
-![forward/backward eval graph](https://github.com/sweeterthancandy/sweeterthancady/GithubAssets/graph.png)
+![forward/backward eval graph](https://github.com/sweeterthancandy/sweeterthancady/blob/master/GithubAssets/graph.png)
 
 ```c++
 double black_backwards(double t, double* d_t, double T, double* d_T, double r, double* d_r, double S, double* d_S, double K, double* d_K, double vol, double* d_vol){
