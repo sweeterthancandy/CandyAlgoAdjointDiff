@@ -140,6 +140,14 @@ namespace Frontend{
                 return WithOperators{ Log::Make( AsOperator(arg) ) };
         }
         template<class T>
+        inline auto Sin(T&& arg){
+                return WithOperators{ Sin::Make( AsOperator(arg) ) };
+        }
+        template<class T>
+        inline auto Cos(T&& arg){
+                return WithOperators{ Cos::Make( AsOperator(arg) ) };
+        }
+        template<class T>
         inline auto Exp(T&& arg){
                 return WithOperators{ Exp::Make( AsOperator(arg) ) };
         }

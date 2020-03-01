@@ -670,7 +670,7 @@ struct RemapUnique : OperatorTransform{
                 {
 
                         std::stringstream ss;
-                        ss << prefix_ << ops_.size();
+                        ss << prefix_ << (ops_.size()+1);
                         auto endogous_sym = EndgenousSymbol::Make(ss.str(), candidate); 
                         
                         ops_[key] = endogous_sym;
@@ -845,17 +845,37 @@ struct DataFlow{
                         folded->EmitCode(out);
                 }
                 #endif
-                out << "|<d>jkjk";
+                Transform::FoldZero constant_fold;
+                out << "|<diff>D[" << sym_->Name() << "]";
+                if( parents_.size() > 0 ){
+                        auto make_node = [&](auto name){
+                                return constant_fold.Fold(
+                                        BinaryOperator::Mul(
+                                                sym_->Expr()->Diff(name),
+                                                ExogenousSymbol::Make("D[" + name + "]")
+                                        )
+                                );
+                        };
+                        std::shared_ptr<Operator> head = make_node(parents_[0]->Name());
+                        for(size_t idx=1;idx<parents_.size();++idx){
+                                head = BinaryOperator::Add(
+                                        head,
+                                        make_node(parents_[idx]->Name())
+                                );
+                        }
+                                
+                        out << " = ";
+                        head->EmitCode(out);
+                }
                 out << "\"];\n";
                 for(auto const& ptr : parents_){
                         
                         auto name = ptr->Name();
 
                         auto diff = sym_->Expr()->Diff(name);
-                        Transform::FoldZero constant_fold;
                         auto folded = constant_fold.Fold(diff);
 
-                        out << sym_->Name() << ":expr -> " << name << ":expr [label=\"";
+                        out << name << ":diff -> " << sym_->Name() << ":diff [label=\"";
                         folded->EmitCode(out);
                         out << "\"];\n";
                 }
@@ -892,10 +912,10 @@ void DataFlowGraph::Add(std::shared_ptr<DataFlow> const& flow){
 
 void reverse_test(){
         using namespace Frontend;
-        using Frontend::Log;
+        using Frontend::Sin;
         auto x1 = Var("x1");
         auto x2 = Var("x2");
-        auto expr = Break("y", x1 * x2 + Log(x1));
+        auto expr = Break("z", Break("y", x1 * x2 + Sin(x1)));
 
         auto unique_mapper = std::make_shared<RemapUnique>("w");
         auto unique        = expr.as_operator_()->Clone(unique_mapper);

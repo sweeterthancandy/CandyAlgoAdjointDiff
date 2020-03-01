@@ -377,6 +377,13 @@ struct EndgenousSymbol : Operator{
                 if( symbol == endo_name_ ){
                         return Constant::Make(1.0);
                 }
+                #if 0
+                else {
+                        std::stringstream text;
+                        text << "Diff(" << endo_name_ << ", " << symbol << ")";
+                        return ExogenousSymbol::Make(text.str());
+                }
+                #endif
                 return Constant::Make(0.0);
         }
         virtual void EmitCode(std::ostream& ss)const override{
@@ -784,6 +791,62 @@ struct Log : Operator{
                 return std::log(At(0)->EvalImpl(ST, checker));
         }
 };
+
+struct Sin : Operator{
+        Sin(std::shared_ptr<Operator> arg)
+                :Operator{"Sin"}
+        {
+                Push(arg);
+        }
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override;
+        virtual void EmitCode(std::ostream& ss)const override{
+                ss << "std::sin(";
+                At(0)->EmitCode(ss);
+                ss << ")";
+        }
+        static std::shared_ptr<Sin> Make(std::shared_ptr<Operator> const& arg){
+                return std::make_shared<Sin>(arg);
+        }
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{
+                return Make(opt_trans->Apply(At(0)));
+        }
+        virtual double EvalImpl(SymbolTable const& ST, EvalChecker& checker)const override{
+                return std::sin(At(0)->EvalImpl(ST, checker));
+        }
+};
+struct Cos : Operator{
+        Cos(std::shared_ptr<Operator> arg)
+                :Operator{"Cos"}
+        {
+                Push(arg);
+        }
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
+                return UnaryOperator::UnaryMinus(
+                        BinaryOperator::Mul(
+                        Sin::Make(At(0)),
+                        At(0)->Diff(symbol)));
+        }
+        virtual void EmitCode(std::ostream& ss)const override{
+                ss << "std::cos(";
+                At(0)->EmitCode(ss);
+                ss << ")";
+        }
+        static std::shared_ptr<Cos> Make(std::shared_ptr<Operator> const& arg){
+                return std::make_shared<Cos>(arg);
+        }
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{
+                return Make(opt_trans->Apply(At(0)));
+        }
+        virtual double EvalImpl(SymbolTable const& ST, EvalChecker& checker)const override{
+                return std::cos(At(0)->EvalImpl(ST, checker));
+        }
+};
+
+std::shared_ptr<Operator> Sin::Diff(std::string const& symbol)const{
+        return BinaryOperator::Mul(
+                Cos::Make(At(0)),
+                At(0)->Diff(symbol));
+}
 
 
 // normal distribution CFS
