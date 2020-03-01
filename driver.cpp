@@ -816,6 +816,7 @@ struct DataFlowGraph{
         void Add(std::shared_ptr<DataFlow> const& flow);
         void EmitDot(std::ostream& out)const;
         void EmitCppCode(std::ostream& out)const;
+        void CollectADFlow(std::vector<std::shared_ptr<EndgenousSymbol> > & computation);
 private:
         std::vector<std::shared_ptr<DataFlow> > rank_;
         std::unordered_map<std::string,std::shared_ptr<DataFlow> > index_; 
@@ -837,6 +838,54 @@ struct DataFlow{
                 out << "double " << sym_->Name() << " = ";
                 sym_->Expr()->EmitCode(out);
                 out << ";\n";
+                if( children_.size() == 0 ){
+                        auto make_ad_sym = [](auto const& name){
+                                return "__rev_ad_" + name;
+                        };
+                        auto make_ptr_sym = [](auto const& name){
+                                return "d_" + name;
+                        };
+                        std::cout << sym_->Name() << "\n";
+                        //sym_->Display();
+                        if( auto param_name = std::dynamic_pointer_cast<ExogenousSymbol>(sym_->Expr()) ){
+                                out << "*" << make_ptr_sym(param_name->Name()) << " = " << make_ad_sym(sym_->Name()) << ";\n";
+                        } else {
+                                out << "// unexpcted\n";
+                        }
+                }
+        }
+        void EmitADFlowImpl(std::vector<std::shared_ptr<EndgenousSymbol> > & computation){
+                auto make_ad_sym = [](auto const& name){
+                        return "__rev_ad_" + name;
+                };
+                if( children_.size() > 0 ){
+                        static Transform::FoldZero constant_fold;
+                        // forward
+                        auto make_node_back = [&](auto child){
+                                return constant_fold.Fold(
+                                        BinaryOperator::Mul(
+                                                child->Expr()->Expr()->Diff(sym_->Name()),
+                                                ExogenousSymbol::Make(make_ad_sym(child->Name()))
+                                        )
+                                );
+                        };
+                        std::shared_ptr<Operator> head = make_node_back(children_[0]);
+                        for(size_t idx=1;idx<children_.size();++idx){
+                                head = BinaryOperator::Add(
+                                        head,
+                                        make_node_back(children_[idx])
+                                );
+                        }
+
+                        sym_->Display();
+                        std::exit(0);
+
+                        if( auto param_name = std::dynamic_pointer_cast<ExogenousSymbol>(sym_->Expr())){
+                                computation.push_back(EndgenousSymbol::Make( make_ad_sym(param_name->Name()), head));
+                        } else {
+                        }
+                                
+                }
         }
         void EmitReverseADCodeImpl(std::ostream& out)const{
                 auto make_ad_sym = [](auto const& name){
@@ -977,6 +1026,11 @@ private:
         std::vector<DataFlow*> parents_;
         std::vector<DataFlow*> children_;
 };
+void DataFlowGraph::CollectADFlow(std::vector<std::shared_ptr<EndgenousSymbol> > & computation){
+        for(auto const& flow : rank_){
+                flow->EmitADFlowImpl(computation);
+        }
+}
         
 void DataFlowGraph::EmitDot(std::ostream& out)const{
         DotCompiler dc;
@@ -1015,10 +1069,12 @@ double black(double t, double* d_t, double T, double* d_T, double r, double* d_r
         for(auto const& flow : rank_){
                 flow->EmitEvalCodeImpl(out);
         }
-        for(size_t idx=rank_.size();idx;){
-                --idx;
-                rank_[idx]->EmitReverseADCodeImpl(out);
-        }
+#if 0
+for(size_t idx=rank_.size();idx;){
+        --idx;
+        rank_[idx]->EmitReverseADCodeImpl(out);
+}
+#endif
         out << "return " << rank_.back()->Name() << ";\n";
         out << "}";
         out <<
@@ -1093,7 +1149,7 @@ void reverse_test(){
 
         auto unique_mapper = std::make_shared<RemapUnique>("w");
         auto unique        = expr->Clone(unique_mapper);
-        unique->Display();
+        //unique->Display();
                 
         auto dependents = unique->DepthFirstAnySymbolicDependency();
         std::vector<std::shared_ptr<DataFlow> > flow;
@@ -1103,18 +1159,49 @@ void reverse_test(){
                 flow.push_back(ptr);
                 graph.Add(ptr);
         }
+        #if 0
         for(auto const& step : flow){
                 step->Expr()->Display();
         }
+        #endif
 
         std::ofstream out("graph.dot");
         graph.EmitDot(out);
         out.close();
         std::system("dot -Tpng graph.dot -o graph.png");
 
-        std::ofstream code("black.cpp");
-        graph.EmitCppCode(code);
-        code.close();
+
+        std::vector<std::shared_ptr<EndgenousSymbol> > ad_computation;
+        graph.CollectADFlow(ad_computation);
+        std::vector<std::shared_ptr<Operator> > computation;
+        //computation.push_back(unique);
+
+        for(auto& ptr : ad_computation ){
+                computation.push_back(ptr->Clone(unique_mapper));
+                //computation.push_back(ptr);
+                //ptr->Display();
+                break;
+        }
+
+        std::cout << "ad_computation.size() => " << ad_computation.size() << "\n"; // __CandyPrint__(cxx-print-scalar,computation.size())
+        std::cout << "computation.size() => " << computation.size() << "\n"; // __CandyPrint__(cxx-print-scalar,computation.size())
+        do{
+
+                DataFlowGraph ad_graph;
+                Operator::DependentsProfile dependents;
+                for(auto const& ptr : computation ){
+                        ptr->CollectDepthFirstAnySymbolicDependency(dependents, true);
+                }
+                for(auto const& dep : dependents.DepthFirst){
+                        auto ptr = std::make_shared<DataFlow>(dep);
+                        flow.push_back(ptr);
+                        ad_graph.Add(ptr);
+                }
+                std::ofstream code("black.cpp");
+                ad_graph.EmitCppCode(code);
+                code.close();
+        }while(0);
+
 }
 
 int main(){
@@ -1123,5 +1210,9 @@ int main(){
         //black_scholes_template();
         //black_scholes_template_opt();
 
-        reverse_test();
+        try{
+                reverse_test();
+        } catch ( std::exception const& e ){
+                std::cerr << "Exception: " << e.what() << "\n";
+        }
 }
