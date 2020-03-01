@@ -648,6 +648,9 @@ struct RemapUnique : OperatorTransform{
         explicit RemapUnique(std::string const& prefix = "__symbol_")
                 : prefix_{prefix}
         {}
+        void mutate_prefix(std::string const& prefix){
+                prefix_ = prefix;
+        }
         virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr){
 
                 auto candidate = ptr->Clone(shared_from_this());
@@ -801,6 +804,59 @@ void black_scholes_template_opt(){
 
 }
 
+
+
+enum InstructionKind{
+        Instr_VarDecl,
+        Instr_Return,
+};
+struct Instruction{
+        explicit Instruction(InstructionKind kind)
+                :kind_(kind)
+        {}
+        InstructionKind Kind()const{ return kind_; }
+        virtual ~Instruction()=default;
+        virtual std::string EmitCode(std::ostream& out)const=0;
+private:
+        InstructionKind kind_;
+};
+struct InstructionDeclareVariable : Instruction{
+        InstructionDeclareVariable(std::string const& name, std::shared_ptr<Operator> op)
+                :Instruction{Instr_VarDecl}
+                ,name_(name)
+                ,op_(op)
+        {}
+        virtual std::string EmitCode(std::ostream& out)const{
+                out << "    double const " << name_ << " = ";
+                op_->EmitCode(out);
+                out << ";\n";
+        }
+        auto const& as_operator_()const{ return op_; }
+private:
+        std::string name_;
+        std::shared_ptr<Operator> op_;
+};
+struct InstructionReturn : Instruction{
+        InstructionReturn(std::string const& name)
+                :Instruction{Instr_Return}
+                ,name_(name)
+        {}
+        virtual std::string EmitCode(std::ostream& out)const{
+                out << "    return " << name_ << ";\n";
+        }
+private:
+        std::string name_;
+};
+
+struct InstructionBlock : std::vector<std::shared_ptr<Instruction> >{
+        void Add(std::shared_ptr<Instruction> instr){
+                push_back(instr);
+        }
+};
+
+
+
+
 struct DataFlow;
 
 struct DotCompiler{
@@ -817,6 +873,8 @@ struct DataFlowGraph{
         void EmitDot(std::ostream& out)const;
         void EmitCppCode(std::ostream& out)const;
         void CollectADFlow(std::vector<std::shared_ptr<EndgenousSymbol> > & computation);
+        void Display(std::ostream& out = std::cout)const;
+        void EmitInstructions(InstructionBlock& B)const;
 private:
         std::vector<std::shared_ptr<DataFlow> > rank_;
         std::unordered_map<std::string,std::shared_ptr<DataFlow> > index_; 
@@ -833,6 +891,11 @@ struct DataFlow{
         }
         void AddChild(DataFlow* ptr){
                 children_.push_back(ptr);
+        }
+        void EmitInstructionsImpl(InstructionBlock& B)const{
+                B.Add(std::make_shared<InstructionDeclareVariable>(
+                                sym_->Name(),
+                                sym_->Expr()));
         }
         void EmitEvalCodeImpl(std::ostream& out)const{
                 out << "double " << sym_->Name() << " = ";
@@ -852,6 +915,17 @@ struct DataFlow{
                         } else {
                                 out << "// unexpcted\n";
                         }
+                }
+                
+                auto make_ad_sym = [](auto const& name){
+                        return "__rev_ad_" + name;
+                };
+                auto make_ptr_sym = [](auto const& name){
+                        return "d_" + name;
+                };
+                if( parents_.empty() ){
+                        auto param_name = std::dynamic_pointer_cast<ExogenousSymbol>(sym_->Expr());
+                        out << "*" << make_ptr_sym(param_name->Name()) << " = " << make_ad_sym(sym_->Name()) << ";\n";
                 }
         }
         void EmitADFlowImpl(std::vector<std::shared_ptr<EndgenousSymbol> > & computation){
@@ -877,13 +951,8 @@ struct DataFlow{
                                 );
                         }
 
-                        sym_->Display();
-                        std::exit(0);
 
-                        if( auto param_name = std::dynamic_pointer_cast<ExogenousSymbol>(sym_->Expr())){
-                                computation.push_back(EndgenousSymbol::Make( make_ad_sym(param_name->Name()), head));
-                        } else {
-                        }
+                        computation.push_back(EndgenousSymbol::Make( make_ad_sym(sym_->Name()), head));
                                 
                 }
         }
@@ -1057,6 +1126,12 @@ void DataFlowGraph::EmitDot(std::ostream& out)const{
         }
         out << "}\n";
 }
+void DataFlowGraph::Display(std::ostream& out)const{
+        for(auto const& flow : rank_){
+                std::cout << "--: " << flow->Name() << "\n";
+        }
+}
+void DataFlowGraph::EmitInstructions(InstructionBlock& B)const{
 void DataFlowGraph::EmitCppCode(std::ostream& out)const{
         out << R"(
 
@@ -1144,7 +1219,9 @@ void reverse_test(){
                 DoubleKernel::BuildFromExo("K"),
                 DoubleKernel::BuildFromExo("vol")
         );
-        auto expr = as_black.as_operator_();
+        auto expr_ = as_black.as_operator_();
+        RemoveEndgenousFolder remove_endogous;
+        auto expr = remove_endogous.Fold(expr_);
         #endif
 
         auto unique_mapper = std::make_shared<RemapUnique>("w");
@@ -1172,19 +1249,23 @@ void reverse_test(){
 
 
         std::vector<std::shared_ptr<EndgenousSymbol> > ad_computation;
+        graph.Display();
         graph.CollectADFlow(ad_computation);
         std::vector<std::shared_ptr<Operator> > computation;
-        //computation.push_back(unique);
+        computation.push_back(unique);
+
+        unique_mapper->mutate_prefix("__rev_ad_");
 
         for(auto& ptr : ad_computation ){
                 computation.push_back(ptr->Clone(unique_mapper));
                 //computation.push_back(ptr);
                 //ptr->Display();
-                break;
         }
 
         std::cout << "ad_computation.size() => " << ad_computation.size() << "\n"; // __CandyPrint__(cxx-print-scalar,computation.size())
         std::cout << "computation.size() => " << computation.size() << "\n"; // __CandyPrint__(cxx-print-scalar,computation.size())
+
+
         do{
 
                 DataFlowGraph ad_graph;
@@ -1197,6 +1278,8 @@ void reverse_test(){
                         flow.push_back(ptr);
                         ad_graph.Add(ptr);
                 }
+                ad_graph.Display();
+                std::cerr << __FILE__ << ":" << __LINE__ << ":A\n"; // __CandyTag__A
                 std::ofstream code("black.cpp");
                 ad_graph.EmitCppCode(code);
                 code.close();
