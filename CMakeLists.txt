@@ -31,3 +31,9 @@ include_directories(include)
 add_executable( driver driver.cpp )
 target_link_libraries( driver pthread ${Boost_LIBRARIES})
 
+
+aux_source_directory(test test_sources)
+find_package(GTest REQUIRED)
+add_executable( test_driver ${test_sources} )
+target_link_libraries(test_driver GTest::GTest GTest::Main)
+
