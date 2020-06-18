@@ -28,8 +28,8 @@ include_directories(${Boost_INCLUDE_DIRS})
 include_directories(include)
 
 
-add_executable( driver driver.cpp )
-target_link_libraries( driver pthread ${Boost_LIBRARIES})
+#add_executable( driver driver.cpp )
+#target_link_libraries( driver pthread ${Boost_LIBRARIES})
 
 
 aux_source_directory(test test_sources)

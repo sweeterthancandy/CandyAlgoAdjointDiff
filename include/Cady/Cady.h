@@ -313,6 +313,20 @@ private:
 };
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 struct Constant : Operator{
         Constant(double value)
                 :Operator{"Constant", OPKind_Constant}
