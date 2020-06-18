@@ -661,6 +661,35 @@ private:
         std::vector<std::shared_ptr<ProfileFunction> > vec_;
 };
 
+
+struct NaiveBlackProfile : ProfileFunction{
+        NaiveBlackProfile(){
+                ImplName = "NaiveBlack";
+                auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
+
+                auto as_black = ad_kernel.Evaluate( 
+                        DoubleKernel::BuildFromExo("t"),
+                        DoubleKernel::BuildFromExo("T"),
+                        DoubleKernel::BuildFromExo("r"),
+                        DoubleKernel::BuildFromExo("S"),
+                        DoubleKernel::BuildFromExo("K"),
+                        DoubleKernel::BuildFromExo("vol")
+                );
+
+                auto expr = as_black.as_operator_();
+
+                IB = std::make_shared<InstructionBlock>();
+                auto deps = expr->DepthFirstAnySymbolicDependencyAndThis();
+                for(auto head : deps.DepthFirst){
+                        if( head->IsExo() )
+                                continue;
+                        auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                        IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                }
+                ResultMapping["c"] = "__statement_7";
+        }
+};
+
 TEST(ProfileGen,A){
         auto def = std::make_shared<ProfileFunctionDefinition>();
         def->BaseName = "BlackPricer";
@@ -680,34 +709,9 @@ TEST(ProfileGen,A){
         def->Fields.push_back("d_vol");
         ProfileCodeGen cg(def);
 
-        auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
 
-        auto as_black = ad_kernel.Evaluate( 
-                DoubleKernel::BuildFromExo("t"),
-                DoubleKernel::BuildFromExo("T"),
-                DoubleKernel::BuildFromExo("r"),
-                DoubleKernel::BuildFromExo("S"),
-                DoubleKernel::BuildFromExo("K"),
-                DoubleKernel::BuildFromExo("vol")
-        );
 
-        auto expr = as_black.as_operator_();
-
-        auto IB = std::make_shared<InstructionBlock>();
-        auto deps = expr->DepthFirstAnySymbolicDependencyAndThis();
-        for(auto head : deps.DepthFirst){
-                if( head->IsExo() )
-                        continue;
-                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
-                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
-        }
-
-        auto forward_diff = std::make_shared<ProfileFunction>();
-        forward_diff->ImplName = "BlackForward";
-        forward_diff->IB = IB;
-        forward_diff->ResultMapping["c"] = "__statement_7";
-
-        cg.AddImplementation(forward_diff);
+        cg.AddImplementation(std::make_shared<NaiveBlackProfile>());
 
         
         cg.EmitCode();
