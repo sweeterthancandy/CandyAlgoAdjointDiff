@@ -532,7 +532,131 @@ TEST(Kernel,Black){
         std::cout << "expr->Kind() => " << expr->Kind() << "\n"; // __CandyPrint__(cxx-print-scalar,expr->Kind())
 }
 
+/*
+        struct BaseName{
+                struct ResultType{
+                        double Fields[0];
+                        double Fields[1];
+                        ...
+                        double Fields[n-1];
+                };
+                virtual ~BaseBame()=default;
+                virtual ResultType FunctionType(double Args[0],
+                                                double Args[1],
+                                                ...
+                                                double Args[m-1])const=0;
+                using map_ty = std::unordered_map<std::string, std::shared_ptr<BaseName> >;
+                static map_ty& AllImplementations(){
+                        static map_ty;
+                        return map_ty;
+                }
+        };
 
+ */
+struct ProfileFunctionDefinition{
+        std::string BaseName;
+        std::string FunctionName;
+        std::vector<std::string> Args;
+        std::vector<std::string> Fields;
+};
+
+struct ProfileFunction{
+        std::shared_ptr<InstructionBlock> ib_;
+};
+
+struct ProfileCodeGen{
+        explicit ProfileCodeGen(std::shared_ptr<ProfileFunctionDefinition> const& def):def_{def}{}
+        void AddImplementation(std::shared_ptr<ProfileFunction> func){
+                vec_.push_back(func);
+        }
+        void EmitCode(std::ostream& out = std::cout){
+                out << "#include <vector>\n";
+                out << "#include <unordered_map>\n";
+                out << "#include <cstdio>\n";
+                out << "#include <cmath>\n";
+                out << "#include <iostream>\n";
+                out << "#include <boost/timer/timer.hpp>\n";
+                out << "\n";
+                out << "\n";
+                out << "struct " << def_->BaseName << "{\n";
+                out << "    struct ResultType{\n";
+                for(auto const& field : def_->Fields ){
+                out << "        double " << field << ";\n";
+                };
+                out << "    };\n";
+                out << "    virtual ~" << def_->BaseName << "()=default\n";
+                out << "    virtual ResultType " << def_->FunctionName << "(\n";
+                for(size_t idx=0;idx!=def_->Args.size();++idx){
+                out << "        " << (idx==0?"  ":", ") << "double " << def_->Args[idx] << (idx+1==def_->Args.size()?")const=0;\n":"\n");
+                }
+                out << "    using map_ty = std::unordered_map<std::string, std::shared_ptr<BaseName> >;\n";
+                out << "    static map_ty& AllImplementations(){\n";
+                out << "            static map_ty mem;\n";
+                out << "            return mem;\n";
+                out << "    }\n";
+                out << "};\n";
+                out << "\n";
+                auto RegisterBaseBame = "Register" + def_->BaseName;
+                out << "template<class T>\n";
+                out << "struct " << RegisterBaseBame << "{\n";
+                out << "    template<class... Args>\n";
+                out << "    " << RegisterBaseBame << "(Args&&... args){\n";
+                out << "        " << def_->BaseName << "::AllImplementations().push_back(std::make_shared<T>(std::forward<Args>(args)...));\n";
+                out << "    }\n";
+                out << "}\n";
+                out << "\n";
+                out << "int main(){\n";
+                out << "    enum{ InitialCount = 10000 };\n";
+                out << "    double t       = 0.0;\n";
+                out << "    double T       = 10.0;\n";
+                out << "    double r       = 0.04;\n";
+                out << "    double S       = 50;\n";
+                out << "    double K       = 60;\n";
+                out << "    double vol     = 0.2;\n";
+                out << "    double epsilon = 1e-10;\n";
+                out << "    auto impls = " << def_->BaseName << "::AllImplementations();\n";
+                out << "    for(volatile size_t N = 100;;N*=2){\n";
+                out << "        std::vector<std::string> line;\n";
+                out << "        line.push_back(boost::lexical_cast<std::string>(N));\n";
+                out << "        for(auto impl : impls ){\n";
+                out << "            boost::timer::cpu_timer timer;\n";
+                out << "            for(volatile size_t idx=0;idx!=N;++idx){\n";
+                out << "                auto result = impl->" << def_->FunctionName << "(t,T,r,S,K,vol);\n";
+                out << "            }\n";
+                out << "            line.push_back(timer.format(4, \"%w\"))\n";
+                out << "        }\n";
+                out << "        for(auto item : line){ std::cout << item << ','; } std::cout << '\\n';\n";
+                out << "    }\n";
+                out << "}\n";
+
+
+        }
+private:
+        std::shared_ptr<ProfileFunctionDefinition> def_;
+        std::vector<std::shared_ptr<ProfileFunction> > vec_;
+};
+
+TEST(ProfileGen,A){
+        auto def = std::make_shared<ProfileFunctionDefinition>();
+        def->BaseName = "BlackPricer";
+        def->FunctionName = "Black";
+        def->Args.push_back("t");
+        def->Args.push_back("T");
+        def->Args.push_back("r");
+        def->Args.push_back("S");
+        def->Args.push_back("K");
+        def->Args.push_back("vol");
+        def->Fields.push_back("c");
+        def->Fields.push_back("d_t");
+        def->Fields.push_back("d_T");
+        def->Fields.push_back("d_r");
+        def->Fields.push_back("d_S");
+        def->Fields.push_back("d_K");
+        def->Fields.push_back("d_vol");
+        ProfileCodeGen cg(def);
+        cg.EmitCode();
+
+}
 
 
 
