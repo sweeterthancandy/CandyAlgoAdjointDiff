@@ -640,6 +640,14 @@ struct ProfileCodeGen{
                 out << "    double vol     = 0.2;\n";
                 out << "    double epsilon = 1e-10;\n";
                 out << "    auto impls = " << def_->BaseName << "::AllImplementations();\n";
+                out << "    std::vector<std::string> header{\"\"};\n";
+                out << "    std::vector<std::string> check{\"\"};\n";
+                out << "    for(auto impl : impls ){\n";
+                out << "        header.push_back(impl.first);\n";
+                out << "        check.push_back(std::to_string(impl.second->" << def_->FunctionName << "(t,T,r,S,K,vol).c));\n";
+                out << "    }\n";
+                out << "    for(auto item : header){ std::cout << item << ','; } std::cout << '\\n';\n";
+                out << "    for(auto item : check){ std::cout << item << ','; } std::cout << '\\n';\n";
                 out << "    for(volatile size_t N = 100;;N*=2){\n";
                 out << "        std::vector<std::string> line;\n";
                 out << "        line.push_back(boost::lexical_cast<std::string>(N));\n";
@@ -686,7 +694,130 @@ struct NaiveBlackProfile : ProfileFunction{
                         auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
                         IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
                 }
-                ResultMapping["c"] = "__statement_7";
+                ResultMapping["c"] = deps.DepthFirst.back()->Name();
+        }
+};
+
+struct NaiveBlackSingleProfile : ProfileFunction{
+        NaiveBlackSingleProfile(){
+                ImplName = "NaiveBlackSingle";
+                auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
+
+                auto as_black = ad_kernel.Evaluate( 
+                        DoubleKernel::BuildFromExo("t"),
+                        DoubleKernel::BuildFromExo("T"),
+                        DoubleKernel::BuildFromExo("r"),
+                        DoubleKernel::BuildFromExo("S"),
+                        DoubleKernel::BuildFromExo("K"),
+                        DoubleKernel::BuildFromExo("vol")
+                );
+
+                auto expr = as_black.as_operator_();
+
+                struct RemoveEndo : OperatorTransform{
+                        virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr){
+                                auto candidate = ptr->Clone(shared_from_this());
+                                if( candidate->Kind() == OPKind_EndgenousSymbol ){
+                                        if( auto typed = std::dynamic_pointer_cast<EndgenousSymbol>(candidate)){
+                                                return typed->Expr();
+                                        }
+                                }
+                                return candidate;
+                        }
+                };
+                auto single_expr = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemoveEndo>());
+
+
+                IB = std::make_shared<InstructionBlock>();
+                IB->Add(std::make_shared<InstructionDeclareVariable>("c", single_expr));
+                ResultMapping["c"] = "c";
+
+        }
+};
+struct RemapUnique : OperatorTransform{
+        explicit RemapUnique(std::string const& prefix = "__symbol_")
+                : prefix_{prefix}
+        {
+                std::cerr << " RemapUnique()\n";
+        }
+        ~RemapUnique(){
+                std::cerr << "~RemapUnique()\n";
+        }
+        void mutate_prefix(std::string const& prefix){
+                prefix_ = prefix;
+        }
+        virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr){
+
+                auto candidate = ptr->Clone(shared_from_this());
+
+                auto key = std::make_tuple(
+                        candidate->NameInvariantOfChildren(),
+                        candidate->Children()
+                        );
+
+                auto iter = ops_.find(key);
+                if( iter != ops_.end() )
+                        return iter->second;
+
+                if( 
+                    candidate->Kind() != OPKind_EndgenousSymbol &&
+                    #if 0
+                    candidate->Kind() != OPKind_ExogenousSymbol &&
+                    #endif
+                    candidate->Kind() != OPKind_Constant )
+                {
+
+                        std::stringstream ss;
+                        ss << prefix_ << (ops_.size()+1);
+                        auto endogous_sym = EndgenousSymbol::Make(ss.str(), candidate); 
+                        
+                        ops_[key] = endogous_sym;
+                        return endogous_sym;
+                } else {
+                        ops_[key] = candidate;
+                        return candidate;
+                }
+        }
+private:
+        std::string prefix_;
+        std::map<
+                std::tuple<
+                        std::string,
+                        std::vector<std::shared_ptr<Operator> > 
+                >,
+                std::shared_ptr<Operator>
+        > ops_;
+};
+struct NaiveBlackThreeAddressProfile : ProfileFunction{
+        NaiveBlackThreeAddressProfile(){
+                ImplName = "NaiveBlackThreeAddress";
+                auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
+
+                auto as_black = ad_kernel.Evaluate( 
+                        DoubleKernel::BuildFromExo("t"),
+                        DoubleKernel::BuildFromExo("T"),
+                        DoubleKernel::BuildFromExo("r"),
+                        DoubleKernel::BuildFromExo("S"),
+                        DoubleKernel::BuildFromExo("K"),
+                        DoubleKernel::BuildFromExo("vol")
+                );
+
+                auto expr = as_black.as_operator_();
+                //auto unique = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemapUnique>());
+                auto unique = expr->Clone(std::make_shared<RemapUnique>());
+
+
+
+                IB = std::make_shared<InstructionBlock>();
+                auto deps = unique->DepthFirstAnySymbolicDependencyAndThis();
+                for(auto head : deps.DepthFirst){
+                        if( head->IsExo() )
+                                continue;
+                        auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                        IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                }
+                ResultMapping["c"] = deps.DepthFirst.back()->Name();
+
         }
 };
 
@@ -712,6 +843,8 @@ TEST(ProfileGen,A){
 
 
         cg.AddImplementation(std::make_shared<NaiveBlackProfile>());
+        cg.AddImplementation(std::make_shared<NaiveBlackSingleProfile>());
+        cg.AddImplementation(std::make_shared<NaiveBlackThreeAddressProfile>());
 
         
         cg.EmitCode();
