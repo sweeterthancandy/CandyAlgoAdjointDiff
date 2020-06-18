@@ -645,11 +645,25 @@ struct ProfileCodeGen{
                 out << "        header.push_back(impl.first);\n";
                 out << "    }\n";
                 out << "    for(auto item : header){ std::cout << item << ','; } std::cout << '\\n';\n";
+                out << "    std::vector<std::string> check;\n";
+                out << "    auto proto_name = \"NaiveBlack\";\n";
+                out << "    auto proto = impls[proto_name]\n;";
+                out << "    auto baseline = proto->" << def_->FunctionName << "(t,T,r,S,K,vol);\n";
                 for(auto const& field : def_->Fields ){
-                out << "    std::vector<std::string> check{\"" << field << "\"};\n";
+                out << "    check.clear();\n";
+                out << "    check.push_back(\"" << field << "\");\n";
                 out << "    for(auto impl : impls ){\n";
                 out << "        check.push_back(std::to_string(impl.second->" << def_->FunctionName << "(t,T,r,S,K,vol)." << field << "));\n";
                 out << "    }\n";
+                out << "    check.push_back(std::to_string((proto->" << def_->FunctionName << "(";
+                for(size_t idx=0;idx!=def_->Args.size();++idx){
+                out << (idx==0?"": ",") << def_->Args[idx];
+                if("d_" + def_->Args[idx] == field ){
+                        out << "+epsilon";
+                }
+                }
+                out << ").c-baseline.c)/epsilon));\n";
+
                 out << "    for(auto item : check){ std::cout << item << ','; } std::cout << '\\n';\n";
                 }
                 out << "    for(volatile size_t N = 100;;N*=2){\n";
@@ -874,9 +888,10 @@ struct NaiveBlackForwardThreeAddressProfile : ProfileFunction{
                 auto single_expr = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemoveEndo>());
 
                 std::vector<std::string> exo{ "t", "T", "r", "S", "K", "vol" };
+                #if 0
                 for(auto sym : exo ){
                         auto sym_diff = single_expr->Diff(sym);
-                        auto sym_diff_unique = sym_diff->Clone(RU);
+                        auto sym_diff_unique = EndgenousSymbol::Make("d_"+sym,sym_diff->Clone(RU));
                         auto deps = sym_diff_unique->DepthFirstAnySymbolicDependencyAndThis();
                         for(auto head : deps.DepthFirst){
                                 if( head->IsExo() )
@@ -888,6 +903,11 @@ struct NaiveBlackForwardThreeAddressProfile : ProfileFunction{
                                 }
                         }
                         ResultMapping["d_"+sym] = deps.DepthFirst.back()->Name();
+                }
+                #endif
+                for(auto sym : exo ){
+                        IB->Add(std::make_shared<InstructionDeclareVariable>("d_"+sym, single_expr->Diff(sym)));
+                        ResultMapping["d_"+sym] = "d_" + sym;
                 }
 
 
