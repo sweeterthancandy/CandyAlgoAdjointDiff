@@ -66,6 +66,7 @@ TEST(Black,Numeric){
                         )
                 )
         );
+        auto sym_df = EndgenousSymbol::Make("df", df);
 
         auto F = BinaryOperator::Mul(
                 S0,
@@ -76,6 +77,7 @@ TEST(Black,Numeric){
                         )
                 )
         );
+        auto sym_F = EndgenousSymbol::Make("F", F);
 
         auto std = BinaryOperator::Mul(
                 sig,
@@ -84,47 +86,53 @@ TEST(Black,Numeric){
                         Constant::Make(0.5)
                 )
         );
+        auto sym_std = EndgenousSymbol::Make("std", std);
 
         auto d = BinaryOperator::Div(
                 Log::Make(
                         BinaryOperator::Div(
-                                EndgenousSymbol::Make("F", F),
-                                EndgenousSymbol::Make("K", K)
+                                sym_F,
+                                K
                         )
                 ),
-                EndgenousSymbol::Make("std", std)
+                sym_std
         );
+        auto sym_d = EndgenousSymbol::Make("d", d);
 
         auto d1 = BinaryOperator::Add(
-                EndgenousSymbol::Make("d", d),
+                sym_d,
                 BinaryOperator::Mul(
                         Constant::Make(0.5),
-                        EndgenousSymbol::Make("std", std)
+                        sym_std
                 )
         );
+        auto sym_d1 = EndgenousSymbol::Make("d1", d1);
         
         auto d2 = BinaryOperator::Sub(
-                EndgenousSymbol::Make("d", d),
+                sym_d,
                 BinaryOperator::Mul(
                         Constant::Make(0.5),
-                        EndgenousSymbol::Make("std", std)
+                        sym_std
                 )
         );
+        auto sym_d2 = EndgenousSymbol::Make("d2", d2);
 
-        auto nd1 = Phi::Make(EndgenousSymbol::Make("d1", d1));
+        auto nd1 = Phi::Make(sym_d1);
+        auto sym_nd1 = EndgenousSymbol::Make("nd1", nd1);
         
-        auto nd2 = Phi::Make(EndgenousSymbol::Make("d2", d2));
+        auto nd2 = Phi::Make(sym_d2);
+        auto sym_nd2 = EndgenousSymbol::Make("nd2", nd2);
 
         auto c = BinaryOperator::Mul(
-                EndgenousSymbol::Make("df", df),
+                sym_df,
                 BinaryOperator::Sub(
                         BinaryOperator::Mul(
-                                EndgenousSymbol::Make("F", F),
-                                EndgenousSymbol::Make("nd1", nd1)
+                                sym_F,
+                                sym_nd1
                         ),
                         BinaryOperator::Mul(
-                                EndgenousSymbol::Make("K", K),
-                                EndgenousSymbol::Make("nd2", nd2)
+                                K,
+                                sym_nd2
                         )
                 )
         );
@@ -249,6 +257,10 @@ TEST(Black,Numeric){
 
         std::cout << "adj_sig => " << adj_sig << "\n"; // __CandyPrint__(cxx-print-scalar,adj_sig)
 
+        auto deps = c->DepthFirstAnySymbolicDependencyNoRecurse();
+        for(auto ptr : deps.Set){
+                std::cout << "ptr->Name() => " << ptr->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,ptr->Name())
+        }
 
 
 

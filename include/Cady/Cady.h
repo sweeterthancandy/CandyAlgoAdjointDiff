@@ -64,6 +64,7 @@ using  EndgenousSymbolSet = std::unordered_set<std::shared_ptr<EndgenousSymbol >
 using  EndgenousSymbolVec = std::vector<std::shared_ptr<EndgenousSymbol > >;
 
 struct Operator;
+struct Symbol;
 
 using OperatorVector = std::vector<std::shared_ptr<Operator> >;
 
@@ -171,7 +172,7 @@ struct Operator : std::enable_shared_from_this<Operator>{
         virtual void EmitCode(std::ostream& ss)const=0;
         
         struct DependentsProfile{
-                void Add(std::shared_ptr<EndgenousSymbol > const& ptr){
+                void Add(std::shared_ptr<Symbol > const& ptr){
                         if( Set.count(ptr) > 0 )
                                 return;
                         Set.insert(ptr);
@@ -186,8 +187,8 @@ struct Operator : std::enable_shared_from_this<Operator>{
                         }
                         std::cout << "displing set done\n";
                 }
-                std::vector<std::shared_ptr<EndgenousSymbol > >        DepthFirst;
-                std::unordered_set<std::shared_ptr<EndgenousSymbol > > Set;
+                std::vector<std::shared_ptr<Symbol > >        DepthFirst;
+                std::unordered_set<std::shared_ptr<Symbol > > Set;
         };
         DependentsProfile DepthFirstAnySymbolicDependencyNoRecurse(){
                 DependentsProfile result;
@@ -198,7 +199,7 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 DependentsProfile result;
                 CollectDepthFirstAnySymbolicDependency(result, true);
                 if( Kind() == OPKind_EndgenousSymbol ){
-                        result.Add(std::reinterpret_pointer_cast<EndgenousSymbol>(shared_from_this()));
+                        result.Add(std::reinterpret_pointer_cast<Symbol>(shared_from_this()));
                 }
                 return result;
         }
@@ -217,7 +218,9 @@ struct Operator : std::enable_shared_from_this<Operator>{
                                         if( recursive ){
                                                 ptr->CollectDepthFirstAnySymbolicDependency(mem, true);
                                         }
-                                        mem.Add(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
+                                        mem.Add(std::reinterpret_pointer_cast<Symbol>(ptr));
+                                } else if( ptr->Kind() == OPKind_ExogenousSymbol ){
+                                        mem.Add(std::reinterpret_pointer_cast<Symbol>(ptr));
                                 } else {
                                         stack.push_back(ptr);
                                 }
@@ -303,7 +306,6 @@ protected:
                 return slot;
         }
 
-        std::string endo_name_;
 private:
         std::string name_;
         std::vector<std::shared_ptr<Operator> > children_;
@@ -352,32 +354,48 @@ private:
         double value_;
 };
 
-struct ExogenousSymbol : Operator{
-        ExogenousSymbol(std::string const& name)
-                :Operator{"ExogenousSymbol", OPKind_ExogenousSymbol}
-                ,name_(name)
+enum SymbolKind{
+        SymbolKind_Endo,
+        SymbolKind_Exo,
+};
+struct Symbol : Operator{
+        template<class... T>
+        Symbol(std::string const& name, SymbolKind sk, T&&... args)
+                : Operator{std::forward<T>(args)...}
+                , name_{name}
+                , sk_{sk}
         {}
-        virtual std::vector<std::string> HiddenArguments()const override{ return {name_}; }
+        std::string const& Name()const{ return name_; }
+        bool IsExo()const{ return sk_ == SymbolKind_Exo; }
+        bool IsEndo()const{ return sk_ == SymbolKind_Endo; }
+        SymbolKind SymKind()const{ return sk_; }
+private:
+        std::string name_;
+        SymbolKind sk_;
+};
+
+struct ExogenousSymbol : Symbol{
+        ExogenousSymbol(std::string const& name)
+                :Symbol{name, SymbolKind_Exo, "ExogenousSymbol", OPKind_ExogenousSymbol}
+        {}
+        virtual std::vector<std::string> HiddenArguments()const override{ return {Name()}; }
         virtual double EvalImpl(SymbolTable const& ST, EvalChecker& checker)const override{
-                return ST[name_];
+                return ST[Name()];
         }
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
-                if( symbol == name_ ){
+                if( symbol == Name() ){
                         return Constant::Make(1.0);
                 }
                 return Constant::Make(0.0);
         }
         virtual void EmitCode(std::ostream& ss)const override{
-                ss << name_;
+                ss << Name();
         }
-        std::string const& Name()const{ return name_; }
         
         static std::shared_ptr<ExogenousSymbol> Make(std::string const& symbol){
                 return std::make_shared<ExogenousSymbol>(symbol);
         }
-        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{ return Make(name_); }
-private:
-        std::string name_;
+        virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{ return Make(Name()); }
 };
 /*
         I want a mechinism for follow statements.
@@ -386,32 +404,30 @@ private:
         splitting a 
 
  */
-struct EndgenousSymbol : Operator{
+struct EndgenousSymbol : Symbol{
         EndgenousSymbol(std::string const& name,
                         std::shared_ptr<Operator> const& expr)
-                :Operator{"EndgenousSymbol", OPKind_EndgenousSymbol}
+                :Symbol{name, SymbolKind_Endo, "EndgenousSymbol", OPKind_EndgenousSymbol}
         {
                 Push(expr);
-                endo_name_ = name;
         }
-        virtual std::vector<std::string> HiddenArguments()const override{ return {endo_name_, "<expr>"}; }
+        virtual std::vector<std::string> HiddenArguments()const override{ return {Name(), "<expr>"}; }
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override{
-                if( symbol == endo_name_ ){
+                if( symbol == Name() ){
                         return Constant::Make(1.0);
                 }
                 #if 0
                 else {
                         std::stringstream text;
-                        text << "Diff(" << endo_name_ << ", " << symbol << ")";
+                        text << "Diff(" << Name() << ", " << symbol << ")";
                         return ExogenousSymbol::Make(text.str());
                 }
                 #endif
                 return Constant::Make(0.0);
         }
         virtual void EmitCode(std::ostream& ss)const override{
-                ss << endo_name_;
+                ss << Name();
         }
-        std::string const& Name()const{ return endo_name_; }
         
         static std::shared_ptr<EndgenousSymbol> Make(std::string const& symbol, std::shared_ptr<Operator> const& expr){
                 auto ptr =  std::make_shared<EndgenousSymbol>(symbol, expr);
@@ -428,12 +444,8 @@ struct EndgenousSymbol : Operator{
         }
         
         virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{
-                return Make(endo_name_, opt_trans->Apply(At(0)));
+                return Make(Name(), opt_trans->Apply(At(0)));
         }
-#if 0
-private:
-        std::string name_;
-#endif
 };
         
 void Operator::Display(std::ostream& ostr)const{
