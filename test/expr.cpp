@@ -401,9 +401,9 @@ TEST(Black,Numeric){
 
 
         std::unordered_map<std::string, double> adj;
-        std::unordered_map<std::string, std::shared_ptr<Operator> > adj_expr;
         adj[deps.DepthFirst.back()->Name()] = 1.0; // seed
 
+        std::unordered_map<std::string, std::shared_ptr<Operator> > adj_expr;
         for(auto head : deps.DepthFirst){
                 adj_expr[head->Name()] = Constant::Make(0.0);
         }
@@ -427,7 +427,6 @@ TEST(Black,Numeric){
                                         expr->Diff(ptr->Name())
                                 )
                         );
-
                 }
         }
         for(auto const& p : adj){
@@ -913,9 +912,101 @@ struct NaiveBlackForwardThreeAddressProfile : ProfileFunction{
                         ResultMapping["d_"+sym] = "d_" + sym;
                 }
                 #endif
+        }
+};
+
+struct NaiveBlackADThreeAddressProfile : ProfileFunction{
+        NaiveBlackADThreeAddressProfile(){
+                ImplName = "NaiveBlackADThreeAddress";
+                auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
+
+                auto as_black = ad_kernel.Evaluate( 
+                        DoubleKernel::BuildFromExo("t"),
+                        DoubleKernel::BuildFromExo("T"),
+                        DoubleKernel::BuildFromExo("r"),
+                        DoubleKernel::BuildFromExo("S"),
+                        DoubleKernel::BuildFromExo("K"),
+                        DoubleKernel::BuildFromExo("vol")
+                );
+
+                auto expr = as_black.as_operator_();
+                //auto unique = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemapUnique>());
+                auto RU = std::make_shared<RemapUnique>();
+                auto unique = expr->Clone(RU);
 
 
+                std::unordered_set<std::string> three_addr_seen;
 
+                IB = std::make_shared<InstructionBlock>();
+                auto deps = unique->DepthFirstAnySymbolicDependencyAndThis();
+                for(auto head : deps.DepthFirst){
+                        if( head->IsExo() )
+                                continue;
+                        if( three_addr_seen.count(head->Name()) == 0 ){
+                                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                                three_addr_seen.insert(head->Name());
+                        }
+                }
+                ResultMapping["c"] = deps.DepthFirst.back()->Name();
+                
+                struct RemoveEndo : OperatorTransform{
+                        virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr){
+                                auto candidate = ptr->Clone(shared_from_this());
+                                if( candidate->Kind() == OPKind_EndgenousSymbol ){
+                                        if( auto typed = std::dynamic_pointer_cast<EndgenousSymbol>(candidate)){
+                                                return typed->Expr();
+                                        }
+                                }
+                                return candidate;
+                        }
+                };
+                auto single_expr = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemoveEndo>());
+                auto expr_deps = unique->DepthFirstAnySymbolicDependencyAndThis();
+
+                std::unordered_map<std::string, std::shared_ptr<Operator> > adj_expr;
+                for(auto head : expr_deps.DepthFirst){
+                        adj_expr[head->Name()] = Constant::Make(0.0);
+                }
+                adj_expr[expr_deps.DepthFirst.back()->Name()] = Constant::Make(1.0);
+                
+                for(size_t idx=expr_deps.DepthFirst.size();idx!=0;){
+                        --idx;
+                        auto head = expr_deps.DepthFirst[idx];
+                        if( head->IsExo() )
+                                continue;
+                        auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                        auto subs = head->DepthFirstAnySymbolicDependencyNoRecurse();
+                        for(auto ptr : subs.DepthFirst){
+                                adj_expr[ptr->Name()] = BinaryOperator::Add(
+                                        adj_expr[ptr->Name()],
+                                        BinaryOperator::Mul(
+                                                adj_expr[head->Name()],
+                                                expr->Diff(ptr->Name())
+                                        )
+                                );
+                        }
+                }
+                for(auto p : adj_expr ){
+                        std::cout << p.first << " => ";
+                        p.second->EmitCode(std::cout);
+                        std::cout << "\n";
+                }
+                std::vector<std::string> exo{ "t", "T", "r", "S", "K", "vol" };
+                for(auto sym : exo ){
+                        auto sym_diff_unique = EndgenousSymbol::Make("d_"+sym,adj_expr[sym]->Clone(RU));
+                        auto deps = sym_diff_unique->DepthFirstAnySymbolicDependencyAndThis();
+                        for(auto head : deps.DepthFirst){
+                                if( head->IsExo() )
+                                        continue;
+                                if( three_addr_seen.count(head->Name()) == 0 ){
+                                        auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                                        IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                                        three_addr_seen.insert(head->Name());
+                                }
+                        }
+                        ResultMapping["d_"+sym] = deps.DepthFirst.back()->Name();
+                }
         }
 };
 
@@ -944,6 +1035,7 @@ TEST(ProfileGen,A){
         cg.AddImplementation(std::make_shared<NaiveBlackSingleProfile>());
         cg.AddImplementation(std::make_shared<NaiveBlackThreeAddressProfile>());
         cg.AddImplementation(std::make_shared<NaiveBlackForwardThreeAddressProfile>());
+        cg.AddImplementation(std::make_shared<NaiveBlackADThreeAddressProfile>());
 
         
         cg.EmitCode();
