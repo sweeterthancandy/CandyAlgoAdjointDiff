@@ -888,9 +888,12 @@ struct NaiveBlackForwardThreeAddressProfile : ProfileFunction{
                 auto single_expr = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemoveEndo>());
 
                 std::vector<std::string> exo{ "t", "T", "r", "S", "K", "vol" };
-                #if 0
+                #if 1
                 for(auto sym : exo ){
                         auto sym_diff = single_expr->Diff(sym);
+                        #if 0
+                        auto sym_diff_unique = EndgenousSymbol::Make("d_"+sym,sym_diff->Clone(std::make_shared<RemapUnique>("__d_" + sym)));
+                        #endif
                         auto sym_diff_unique = EndgenousSymbol::Make("d_"+sym,sym_diff->Clone(RU));
                         auto deps = sym_diff_unique->DepthFirstAnySymbolicDependencyAndThis();
                         for(auto head : deps.DepthFirst){
@@ -904,11 +907,12 @@ struct NaiveBlackForwardThreeAddressProfile : ProfileFunction{
                         }
                         ResultMapping["d_"+sym] = deps.DepthFirst.back()->Name();
                 }
-                #endif
+                #else
                 for(auto sym : exo ){
                         IB->Add(std::make_shared<InstructionDeclareVariable>("d_"+sym, single_expr->Diff(sym)));
                         ResultMapping["d_"+sym] = "d_" + sym;
                 }
+                #endif
 
 
 
