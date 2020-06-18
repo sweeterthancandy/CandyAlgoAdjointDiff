@@ -821,6 +821,76 @@ struct NaiveBlackThreeAddressProfile : ProfileFunction{
         }
 };
 
+struct NaiveBlackForwardThreeAddressProfile : ProfileFunction{
+        NaiveBlackForwardThreeAddressProfile(){
+                ImplName = "NaiveBlackForwardThreeAddress";
+                auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
+
+                auto as_black = ad_kernel.Evaluate( 
+                        DoubleKernel::BuildFromExo("t"),
+                        DoubleKernel::BuildFromExo("T"),
+                        DoubleKernel::BuildFromExo("r"),
+                        DoubleKernel::BuildFromExo("S"),
+                        DoubleKernel::BuildFromExo("K"),
+                        DoubleKernel::BuildFromExo("vol")
+                );
+
+                auto expr = as_black.as_operator_();
+                //auto unique = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemapUnique>());
+                auto RU = std::make_shared<RemapUnique>();
+                auto unique = expr->Clone(RU);
+
+
+                std::unordered_set<std::string> three_addr_seen;
+
+                IB = std::make_shared<InstructionBlock>();
+                auto deps = unique->DepthFirstAnySymbolicDependencyAndThis();
+                for(auto head : deps.DepthFirst){
+                        if( head->IsExo() )
+                                continue;
+                        if( three_addr_seen.count(head->Name()) == 0 ){
+                                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                                three_addr_seen.insert(head->Name());
+                        }
+                }
+                ResultMapping["c"] = deps.DepthFirst.back()->Name();
+                
+                struct RemoveEndo : OperatorTransform{
+                        virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr){
+                                auto candidate = ptr->Clone(shared_from_this());
+                                if( candidate->Kind() == OPKind_EndgenousSymbol ){
+                                        if( auto typed = std::dynamic_pointer_cast<EndgenousSymbol>(candidate)){
+                                                return typed->Expr();
+                                        }
+                                }
+                                return candidate;
+                        }
+                };
+                auto single_expr = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemoveEndo>());
+
+                std::vector<std::string> exo{ "t", "T", "r", "S", "K", "vol" };
+                for(auto sym : exo ){
+                        auto sym_diff = single_expr->Diff(sym);
+                        auto sym_diff_unique = sym_diff->Clone(RU);
+                        auto deps = sym_diff_unique->DepthFirstAnySymbolicDependencyAndThis();
+                        for(auto head : deps.DepthFirst){
+                                if( head->IsExo() )
+                                        continue;
+                                if( three_addr_seen.count(head->Name()) == 0 ){
+                                        auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                                        IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                                        three_addr_seen.insert(head->Name());
+                                }
+                        }
+                        ResultMapping["d_"+sym] = deps.DepthFirst.back()->Name();
+                }
+
+
+
+        }
+};
+
 TEST(ProfileGen,A){
         auto def = std::make_shared<ProfileFunctionDefinition>();
         def->BaseName = "BlackPricer";
@@ -845,6 +915,7 @@ TEST(ProfileGen,A){
         cg.AddImplementation(std::make_shared<NaiveBlackProfile>());
         cg.AddImplementation(std::make_shared<NaiveBlackSingleProfile>());
         cg.AddImplementation(std::make_shared<NaiveBlackThreeAddressProfile>());
+        cg.AddImplementation(std::make_shared<NaiveBlackForwardThreeAddressProfile>());
 
         
         cg.EmitCode();
