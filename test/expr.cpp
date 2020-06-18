@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
+#include <list>
 #include "Cady/Cady.h"
+#include "Cady/Transform.h"
 
 using namespace Cady;
 
@@ -45,6 +47,107 @@ TEST(Expr,EndgenousSymbol){
         EXPECT_EQ(1.0, std::reinterpret_pointer_cast<Constant>(ds_ds)->Value() );
         EXPECT_EQ(OPKind_Constant, ds_dt->Kind());
         EXPECT_EQ(0.0, std::reinterpret_pointer_cast<Constant>(ds_dt)->Value() );
+}
+
+
+
+enum InstructionKind{
+        Instr_VarDecl,
+        Instr_PointerAssignment,
+        Instr_Return,
+        Instr_Comment,
+};
+struct Instruction{
+        explicit Instruction(InstructionKind kind)
+                :kind_(kind)
+        {}
+        virtual ~Instruction()=default;
+        InstructionKind Kind()const{ return kind_; }
+        virtual void EmitCode(std::ostream& out)const=0;
+private:
+        InstructionKind kind_;
+};
+struct InstructionComment : Instruction{
+        InstructionComment(std::vector<std::string> const& text)
+                :Instruction{Instr_Comment}
+                ,text_{text}
+        {}
+        virtual void EmitCode(std::ostream& out)const{
+                for(auto const& comment : text_){
+                        out << "    // " << comment << "\n";
+                }
+        }
+private:
+        std::vector<std::string> text_;
+};
+struct InstructionDeclareVariable : Instruction{
+        InstructionDeclareVariable(std::string const& name, std::shared_ptr<Operator> op)
+                :Instruction{Instr_VarDecl}
+                ,name_(name)
+                ,op_(op)
+        {}
+        virtual void EmitCode(std::ostream& out)const{
+                out << "    double const " << name_ << " = ";
+                op_->EmitCode(out);
+                out << ";\n";
+        }
+        auto const& as_operator_()const{ return op_; }
+private:
+        std::string name_;
+        std::shared_ptr<Operator> op_;
+};
+struct InstructionPointerAssignment : Instruction{
+        InstructionPointerAssignment(std::string const& name, std::string const& r_value)
+                :Instruction{Instr_PointerAssignment}
+                ,name_(name)
+                ,r_value_{r_value}
+        {}
+        virtual void EmitCode(std::ostream& out)const{
+                out << "    *" << name_ << " = " << r_value_ << ";\n";
+        }
+private:
+        std::string name_;
+        std::string r_value_;
+};
+struct InstructionReturn : Instruction{
+        InstructionReturn(std::string const& name)
+                :Instruction{Instr_Return}
+                ,name_(name)
+        {}
+        virtual void EmitCode(std::ostream& out)const{
+                out << "    return " << name_ << ";\n";
+        }
+private:
+        std::string name_;
+};
+
+struct InstructionBlock : std::vector<std::shared_ptr<Instruction> >{
+        void Add(std::shared_ptr<Instruction> instr){
+                // quick hack for now
+                if( size() > 0 && back()->Kind() == Instr_Return ){
+                        auto tmp = back();
+                        pop_back();
+                        push_back(instr);
+                        push_back(tmp);
+                } else {
+                        push_back(instr);
+                }
+        }
+        virtual void EmitCode(std::ostream& out)const{
+                for(auto const& ptr : *this){
+                        ptr->EmitCode(out);
+                }
+        }
+};
+
+TEST(Instruction,InstructionDeclareVariable){
+        auto expr = BinaryOperator::Add(
+                Constant::Make(2.0),
+                Constant::Make(3.0)
+        );
+        auto instr = std::make_shared<InstructionDeclareVariable>("tmp", expr);
+        instr->EmitCode(std::cout);
+
 }
 
 /*
@@ -136,6 +239,7 @@ TEST(Black,Numeric){
                         )
                 )
         );
+        auto sym_c = EndgenousSymbol::Make("c", c);
 
         double S0_value = 10;
         double r_value = 0.05;
@@ -257,19 +361,120 @@ TEST(Black,Numeric){
 
         std::cout << "adj_sig => " << adj_sig << "\n"; // __CandyPrint__(cxx-print-scalar,adj_sig)
 
-        auto deps = c->DepthFirstAnySymbolicDependencyNoRecurse();
-        for(auto ptr : deps.Set){
+
+        #if 0
+
+        struct StackFrame{
+                std::string name;
+                std::shared_ptr<Operator> Op;
+        };
+        std::list<StackFrame> stack{StackFrame{"c", c}};
+
+        std::unordered_set<std::string> seen;
+        for(;stack.size();){
+                auto head = stack.front();
+                stack.pop_front();
+                auto deps = head.Op->DepthFirstAnySymbolicDependencyNoRecurse();
+                for(auto ptr : deps.Set){
+                        if(ptr->IsEndo() ){
+                                if( seen.count(ptr->Name()) == 0){
+                                        std::cout << head.name << " -> " << ptr->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,ptr->Name())
+                                        stack.push_back(StackFrame{ptr->Name(), std::reinterpret_pointer_cast<EndgenousSymbol>(ptr)->Expr()});
+                                        seen.insert(ptr->Name());
+                                }
+                        } else {
+                                //std::cout << head.name << " -> " << ptr->Name() << " [terminal]\n"; // __CandyPrint__(cxx-print-scalar,ptr->Name())
+                        }
+                }
+        }
+
+        std::cout << "\n\n";
+        #endif
+        auto deps = sym_c->DepthFirstAnySymbolicDependencyAndThis();
+
+        for(auto ptr : deps.DepthFirst ){
+                if( ptr->IsExo() )
+                        continue;
                 std::cout << "ptr->Name() => " << ptr->Name() << "\n"; // __CandyPrint__(cxx-print-scalar,ptr->Name())
         }
 
 
+        std::unordered_map<std::string, double> adj;
+        std::unordered_map<std::string, std::shared_ptr<Operator> > adj_expr;
+        adj[deps.DepthFirst.back()->Name()] = 1.0; // seed
 
-
-
-
+        for(auto head : deps.DepthFirst){
+                adj_expr[head->Name()] = Constant::Make(0.0);
+        }
+        adj_expr[deps.DepthFirst.back()->Name()] = Constant::Make(1.0);
         
+        for(size_t idx=deps.DepthFirst.size();idx!=0;){
+                --idx;
+                auto head = deps.DepthFirst[idx];
+                if( head->IsExo() )
+                        continue;
+                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                auto subs = head->DepthFirstAnySymbolicDependencyNoRecurse();
+                for(auto ptr : subs.DepthFirst){
+                        std::cout << "adj_" << ptr->Name() << " => " << "adj_" << head->Name() << " * " << expr->Diff(ptr->Name())->Eval(ST) << "\n";
+                        adj[ptr->Name()] += adj[head->Name()]*expr->Diff(ptr->Name())->Eval(ST);
 
-                                
-                        
+                        adj_expr[ptr->Name()] = BinaryOperator::Add(
+                                adj_expr[ptr->Name()],
+                                BinaryOperator::Mul(
+                                        adj_expr[head->Name()],
+                                        expr->Diff(ptr->Name())
+                                )
+                        );
+
+                }
+        }
+        for(auto const& p : adj){
+                std::cout << std::left << std::setw(10) << p.first << " => " << p.second << "\n";
+        }
+
+        auto adj_diff = [&](auto sym){
+                return adj[sym];
+        };
+        auto fd_diff = [&](auto sym){
+                auto bump_ST = ST;
+                bump_ST(sym, ST[sym] + epsilon);
+                auto sig_bump = c->Eval(bump_ST);
+                return ( sig_bump - baseline ) / epsilon;
+        };
+        auto ana_diff = [&](auto sym){
+                return c_raw->Diff(sym)->Eval(ST);
+        };
+
+
+        std::vector<std::string> exo{ "S0", "r", "y", "sig", "K", "T"};
+        for(auto sym : exo ){
+                std::cout << "adj_diff(sym) => " << adj_diff(sym) << "\n"; // __CandyPrint__(cxx-print-scalar,adj_diff(sym))
+                std::cout << "fd_diff(sym) => " << fd_diff(sym) << "\n"; // __CandyPrint__(cxx-print-scalar,fd_diff(sym))
+                std::cout << "ana_diff(sym) => " << ana_diff(sym) << "\n"; // __CandyPrint__(cxx-print-scalar,ana_diff(sym))
+
+                EXPECT_FLOAT_EQ( ana_diff(sym), adj_diff(sym));
+        }
+
+        InstructionBlock IB;
+        for(auto head : deps.DepthFirst){
+                if( head->IsExo() )
+                        continue;
+                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                auto subs = head->DepthFirstAnySymbolicDependencyNoRecurse();
+                IB.Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+        }
+
+        Transform::FoldZero fold_zero;
+        for(auto p : adj_expr ){
+                auto folded = fold_zero.Fold(p.second);
+                IB.Add(std::make_shared<InstructionDeclareVariable>("adj_" + p.first, folded));
+        }
+        IB.Add(std::make_shared<InstructionReturn>("c"));
+        IB.EmitCode(std::cout);
+
 }
+
+
+
 
