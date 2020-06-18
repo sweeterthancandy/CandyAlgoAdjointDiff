@@ -476,5 +476,63 @@ TEST(Black,Numeric){
 }
 
 
+#include "Cady/Frontend.h"
+struct BlackScholesCallOption{
+        template<class Double>
+        struct Build{
+                Double Evaluate(
+                        Double t,
+                        Double T,
+                        Double r,
+                        Double S,
+                        Double K,
+                        Double vol )const
+                {
+                        using MathFunctions::Phi;
+                        using MathFunctions::Exp;
+                        using MathFunctions::Pow;
+                        using MathFunctions::Log;
+
+                        Double d1 = ((1.0 / ( vol * Pow((T - t),0.5) )) * ( Log(S / K) +   (r + ( Pow(vol,2.0) ) / 2 ) * (T - t) ));
+                        Double d2 = d1 - vol * (T - t);
+                        Double pv = K * Exp( -r * ( T - t ) );
+                        Double black = Phi(d1) * S - Phi(d2) * pv;
+                        return black;
+                }
+        };
+};
+
+
+TEST(Kernel,Black){
+        auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
+
+        auto as_black = ad_kernel.Evaluate( 
+                DoubleKernel::BuildFromExo("t"),
+                DoubleKernel::BuildFromExo("T"),
+                DoubleKernel::BuildFromExo("r"),
+                DoubleKernel::BuildFromExo("S"),
+                DoubleKernel::BuildFromExo("K"),
+                DoubleKernel::BuildFromExo("vol")
+        );
+
+        auto expr = as_black.as_operator_();
+
+        InstructionBlock IB;
+        auto deps = expr->DepthFirstAnySymbolicDependencyAndThis();
+        for(auto head : deps.DepthFirst){
+                if( head->IsExo() )
+                        continue;
+                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                auto subs = head->DepthFirstAnySymbolicDependencyNoRecurse();
+                IB.Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+        }
+        IB.Add(std::make_shared<InstructionReturn>(expr->Name()));
+        IB.EmitCode(std::cout);
+
+        std::cout << "expr->Kind() => " << expr->Kind() << "\n"; // __CandyPrint__(cxx-print-scalar,expr->Kind())
+}
+
+
+
 
 

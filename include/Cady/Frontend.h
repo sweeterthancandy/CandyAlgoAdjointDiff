@@ -195,4 +195,77 @@ namespace Frontend{
 } // end namespace Frontend
 } // end namespace Cady
 
+namespace Cady{
+/*
+        Here we want to make a massive distincition between lvalue and rvalue
+
+        each lvalue is single assignment, and maps to statements in the code,
+        the idea is that we might have something like this
+
+                a = f(x,y,z)
+                b = a * ( a - 1 ) * (a -2 ) * ( a -3 )
+
+        mathematically, the above is nothing more than the expanded expression,
+        however we want to allow the creation of statements. 
+ */
+struct DoubleKernelImpl{
+        virtual ~DoubleKernelImpl()=default;
+        virtual std::shared_ptr<Operator> as_operator_()const=0;
+};
+struct DoubleKernelOperator : DoubleKernelImpl{
+        DoubleKernelOperator(std::shared_ptr<Operator> ptr)
+                :operator_(ptr)
+        {}
+        virtual std::shared_ptr<Operator> as_operator_()const{ return operator_; }
+private:
+        std::shared_ptr<Operator> operator_;
+};
+struct DoubleKernel : Frontend::ImbueWith{
+        static std::string Tag(){
+                static size_t counter = 0;
+                std::stringstream ss;
+                ss << "__statement_" << counter;
+                ++counter;
+                return ss.str();
+        }
+        template< class Expr >
+        DoubleKernel(Expr&& expr)
+                : impl_{std::make_shared<DoubleKernelOperator>(EndgenousSymbol::Make(Tag(), Frontend::AsOperator(expr)))}
+        {}
+        struct Dispatch_Exo{};
+        DoubleKernel( Dispatch_Exo&&, std::shared_ptr<Operator> const& op)
+                : impl_{std::make_shared<DoubleKernelOperator>(op)}
+        {}
+        static DoubleKernel BuildFromExo(std::string const& name){
+                return DoubleKernel(Dispatch_Exo{}, std::make_shared<ExogenousSymbol>(name)); 
+        }
+        std::shared_ptr<Operator> as_operator_()const{
+                return impl_->as_operator_();
+        }
+private:
+        std::shared_ptr<DoubleKernelImpl> impl_;
+};
+namespace MathFunctions{
+
+        inline double Phi(double x){
+                return std::erfc(-x/std::sqrt(2))/2;
+        }
+        inline double Exp(double x){
+                return std::exp(x);
+        }
+        inline double Pow(double x, double y){
+                return std::pow(x,y);
+        }
+        inline double Log(double x){
+                return std::log(x);
+        }
+
+        using Frontend::Phi;
+        using Frontend::Exp;
+        using Frontend::Pow;
+        using Frontend::Log;
+
+} // end namespace MathFunctions
+} // end namespace Cady
+
 #endif // INCLUDE_CADY_FRONTEND_H
