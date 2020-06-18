@@ -122,6 +122,7 @@ private:
 };
 
 struct InstructionBlock : std::vector<std::shared_ptr<Instruction> >{
+        virtual ~InstructionBlock()=default;
         void Add(std::shared_ptr<Instruction> instr){
                 // quick hack for now
                 if( size() > 0 && back()->Kind() == Instr_Return ){
@@ -561,7 +562,9 @@ struct ProfileFunctionDefinition{
 };
 
 struct ProfileFunction{
-        std::shared_ptr<InstructionBlock> ib_;
+        std::string ImplName;
+        std::shared_ptr<InstructionBlock> IB;
+        std::unordered_map<std::string, std::string> ResultMapping;
 };
 
 struct ProfileCodeGen{
@@ -575,21 +578,23 @@ struct ProfileCodeGen{
                 out << "#include <cstdio>\n";
                 out << "#include <cmath>\n";
                 out << "#include <iostream>\n";
+                out << "#include <memory>\n";
                 out << "#include <boost/timer/timer.hpp>\n";
+                out << "#include <boost/lexical_cast.hpp>\n";
                 out << "\n";
                 out << "\n";
                 out << "struct " << def_->BaseName << "{\n";
                 out << "    struct ResultType{\n";
                 for(auto const& field : def_->Fields ){
-                out << "        double " << field << ";\n";
+                out << "        double " << field << " = 0.0;\n";
                 };
                 out << "    };\n";
-                out << "    virtual ~" << def_->BaseName << "()=default\n";
+                out << "    virtual ~" << def_->BaseName << "()=default;\n";
                 out << "    virtual ResultType " << def_->FunctionName << "(\n";
                 for(size_t idx=0;idx!=def_->Args.size();++idx){
                 out << "        " << (idx==0?"  ":", ") << "double " << def_->Args[idx] << (idx+1==def_->Args.size()?")const=0;\n":"\n");
                 }
-                out << "    using map_ty = std::unordered_map<std::string, std::shared_ptr<BaseName> >;\n";
+                out << "    using map_ty = std::unordered_map<std::string, std::shared_ptr<" << def_->BaseName << "> >;\n";
                 out << "    static map_ty& AllImplementations(){\n";
                 out << "            static map_ty mem;\n";
                 out << "            return mem;\n";
@@ -600,11 +605,31 @@ struct ProfileCodeGen{
                 out << "template<class T>\n";
                 out << "struct " << RegisterBaseBame << "{\n";
                 out << "    template<class... Args>\n";
-                out << "    " << RegisterBaseBame << "(Args&&... args){\n";
-                out << "        " << def_->BaseName << "::AllImplementations().push_back(std::make_shared<T>(std::forward<Args>(args)...));\n";
+                out << "    " << RegisterBaseBame << "(std::string const& name, Args&&... args){\n";
+                out << "        " << def_->BaseName << "::AllImplementations()[name] = std::make_shared<T>(std::forward<Args>(args)...);\n";
                 out << "    }\n";
-                out << "}\n";
+                out << "};\n";
                 out << "\n";
+
+
+                for(auto func : vec_){
+                out << "struct " << func->ImplName << " : " << def_->BaseName << "{\n";
+                out << "    virtual ResultType " << def_->FunctionName << "(\n";
+                for(size_t idx=0;idx!=def_->Args.size();++idx){
+                out << "        " << (idx==0?"  ":", ") << "double " << def_->Args[idx] << (idx+1==def_->Args.size()?")const override{\n":"\n");
+                }
+                func->IB->EmitCode(out);
+                out << "        ResultType result;\n";
+                for(auto const& p : func->ResultMapping){
+                out << "        result." << p.first << " = " << p.second << ";\n";
+                }
+                out << "        return result;\n";
+                out << "    }\n";
+                out << "};\n";
+                out << "static " << RegisterBaseBame << "<" << func->ImplName << "> Reg" << func->ImplName << "(\"" << func->ImplName << "\");\n";
+                }
+
+
                 out << "int main(){\n";
                 out << "    enum{ InitialCount = 10000 };\n";
                 out << "    double t       = 0.0;\n";
@@ -621,9 +646,9 @@ struct ProfileCodeGen{
                 out << "        for(auto impl : impls ){\n";
                 out << "            boost::timer::cpu_timer timer;\n";
                 out << "            for(volatile size_t idx=0;idx!=N;++idx){\n";
-                out << "                auto result = impl->" << def_->FunctionName << "(t,T,r,S,K,vol);\n";
+                out << "                auto result = impl.second->" << def_->FunctionName << "(t,T,r,S,K,vol);\n";
                 out << "            }\n";
-                out << "            line.push_back(timer.format(4, \"%w\"))\n";
+                out << "            line.push_back(timer.format(4, \"%w\"));\n";
                 out << "        }\n";
                 out << "        for(auto item : line){ std::cout << item << ','; } std::cout << '\\n';\n";
                 out << "    }\n";
@@ -654,8 +679,41 @@ TEST(ProfileGen,A){
         def->Fields.push_back("d_K");
         def->Fields.push_back("d_vol");
         ProfileCodeGen cg(def);
+
+        auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
+
+        auto as_black = ad_kernel.Evaluate( 
+                DoubleKernel::BuildFromExo("t"),
+                DoubleKernel::BuildFromExo("T"),
+                DoubleKernel::BuildFromExo("r"),
+                DoubleKernel::BuildFromExo("S"),
+                DoubleKernel::BuildFromExo("K"),
+                DoubleKernel::BuildFromExo("vol")
+        );
+
+        auto expr = as_black.as_operator_();
+
+        auto IB = std::make_shared<InstructionBlock>();
+        auto deps = expr->DepthFirstAnySymbolicDependencyAndThis();
+        for(auto head : deps.DepthFirst){
+                if( head->IsExo() )
+                        continue;
+                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+        }
+
+        auto forward_diff = std::make_shared<ProfileFunction>();
+        forward_diff->ImplName = "BlackForward";
+        forward_diff->IB = IB;
+        forward_diff->ResultMapping["c"] = "__statement_7";
+
+        cg.AddImplementation(forward_diff);
+
+        
         cg.EmitCode();
 
+        std::ofstream out("pc.cxx");
+        cg.EmitCode(out);
 }
 
 
