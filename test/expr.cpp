@@ -641,13 +641,17 @@ struct ProfileCodeGen{
                 out << "    double epsilon = 1e-10;\n";
                 out << "    auto impls = " << def_->BaseName << "::AllImplementations();\n";
                 out << "    std::vector<std::string> header{\"\"};\n";
-                out << "    std::vector<std::string> check{\"\"};\n";
                 out << "    for(auto impl : impls ){\n";
                 out << "        header.push_back(impl.first);\n";
-                out << "        check.push_back(std::to_string(impl.second->" << def_->FunctionName << "(t,T,r,S,K,vol).c));\n";
                 out << "    }\n";
                 out << "    for(auto item : header){ std::cout << item << ','; } std::cout << '\\n';\n";
+                for(auto const& field : def_->Fields ){
+                out << "    std::vector<std::string> check{\"" << field << "\"};\n";
+                out << "    for(auto impl : impls ){\n";
+                out << "        check.push_back(std::to_string(impl.second->" << def_->FunctionName << "(t,T,r,S,K,vol)." << field << "));\n";
+                out << "    }\n";
                 out << "    for(auto item : check){ std::cout << item << ','; } std::cout << '\\n';\n";
+                }
                 out << "    for(volatile size_t N = 100;;N*=2){\n";
                 out << "        std::vector<std::string> line;\n";
                 out << "        line.push_back(boost::lexical_cast<std::string>(N));\n";
