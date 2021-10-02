@@ -157,7 +157,7 @@ public:
                 auto expr = decl_instr->as_operator_();
                 auto matrix_func = ImpliedMatrixFunction::Make(matrix_func_list.size(), instr);
 
-                size_t slot = head_alloc_map.size();
+                size_t slot = alloc_map.size();
                 alloc_map[decl_instr->LValueName()] = slot;
 
                 AADIB->Add(matrix_func->MakeComment());
@@ -520,8 +520,8 @@ double BlackScholesCallOptionTestBareMetal(double t, double T, double r, double 
     double const __symbol_23 = std::pow(__symbol_3, 0.500000);
 
     // Matrix function F_5 => __symbol_24
-    //     __symbol_11 => __symbol_23
     //     __symbol_23 => __symbol_11
+    //     __symbol_11 => __symbol_23
 
     double const __symbol_24 = ((__symbol_11) * (__symbol_23));
 
@@ -613,8 +613,8 @@ double BlackScholesCallOptionTestBareMetal(double t, double T, double r, double 
     double const __symbol_12 = ((__symbol_11) * (__symbol_3));
 
     // Matrix function F_22 => __symbol_29
-    //     __symbol_12 => -1.000000
     //     __statement_0 => 1.000000
+    //     __symbol_12 => -1.000000
 
     double const __symbol_29 = ((__statement_0)-(__symbol_12));
 
@@ -662,8 +662,8 @@ double BlackScholesCallOptionTestBareMetal(double t, double T, double r, double 
     double const __symbol_32 = ((__symbol_31) * (__statement_2));
 
     // Matrix function F_31 => __symbol_35
-    //     __symbol_32 => -1.000000
     //     __symbol_34 => 1.000000
+    //     __symbol_32 => -1.000000
 
     double const __symbol_35 = ((__symbol_34)-(__symbol_32));
 
@@ -950,7 +950,7 @@ void test_bs() {
 
 int main()
 {
-    enum{ RunDriver = 1};
+    enum{ RunDriver = 0};
     if( RunDriver )
     {
         driver();
