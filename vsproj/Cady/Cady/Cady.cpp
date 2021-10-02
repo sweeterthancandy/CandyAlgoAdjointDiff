@@ -1,11 +1,4 @@
-// Cady.cpp : This file contains the 'main' function. Program execution begins and ends there.
-//
-
 #include <iostream>
-
-// SweeterThanCady.cpp : Defines the entry point for the application.
-//
-
 
 #include "Cady/CodeGen.h"
 #include "Cady/Frontend.h"
@@ -19,423 +12,6 @@
 #include <functional>
 
 using namespace Cady;
-
-
-
-
-
-
-
-struct BlackScholesCallOption {
-    template<class Double>
-    struct Build {
-        Double Evaluate(
-            Double t,
-            Double T,
-            Double r,
-            Double S,
-            Double K,
-            Double vol)const
-        {
-#if 0
-            using MathFunctions::Phi;
-            using MathFunctions::Exp;
-            using MathFunctions::Pow;
-            using MathFunctions::Log;
-
-            Double d1 = ((1.0 / (vol * Pow((T - t), 0.5))) * (Log(S / K) + (r + (Pow(vol, 2.0)) / 2) * (T - t)));
-            Double d2 = d1 - vol * (T - t);
-            Double pv = K * Exp(-r * (T - t));
-            Double black = Phi(d1) * S - Phi(d2) * pv;
-            return black;
-#endif
-            Double a0 = t * t;
-            Double a1 = T * T;
-            Double a2 = r * r;
-            Double a3 = S * S;
-            Double a4 = K * K;
-            Double a5 = vol * vol;
-
-            Double b0 = a0 * a1 + a2;
-            Double b1 = a1 * a2 + a3;
-            Double b2 = a2 * a3 + a4;
-            Double b3 = a3 * a4 + a5;
-            Double b4 = a4 * a5 + a0;
-
-            Double c1 = b0 * b1 + b3;
-            Double c2 = b1 * b2 + b3;
-
-            Double result = c2 * c1;
-
-            return result;
-
-        }
-    };
-};
-
-
-
-struct ProfileFunctionDefinition {
-    std::string BaseName;
-    std::string FunctionName;
-    std::vector<std::string> Args;
-    std::vector<std::string> Fields;
-};
-
-struct ProfileFunction {
-    std::string ImplName;
-    std::shared_ptr<InstructionBlock> IB;
-    std::unordered_map<std::string, std::string> ResultMapping;
-};
-
-struct ProfileCodeGen {
-    explicit ProfileCodeGen(std::shared_ptr<ProfileFunctionDefinition> const& def) :def_{ def } {}
-    void AddImplementation(std::shared_ptr<ProfileFunction> func) {
-        vec_.push_back(func);
-    }
-    void EmitCode(std::ostream& out = std::cout) {
-        out << "#include <vector>\n";
-        out << "#include <unordered_map>\n";
-        out << "#include <cstdio>\n";
-        out << "#include <cmath>\n";
-        out << "#include <iostream>\n";
-        out << "#include <memory>\n";
-        out << "#include <chrono>\n";
-        out << "#include <string>\n";
-        out << "\n";
-        out << "struct cpu_timer{\n";
-        out << "    cpu_timer()\n";
-        out << "        : start_{std::chrono::high_resolution_clock::now()}\n";
-        out << "    {}\n";
-        out << "    template<class... Args>\n";
-        out << "    std::string format()const {\n";
-        out << "        return std::to_string((std::chrono::high_resolution_clock::now() - start_).count());\n";
-        out << "    }\n";
-        out << "    std::chrono::time_point<std::chrono::high_resolution_clock> start_;\n";
-        out << "};\n";
-        out << "\n";
-        out << "struct " << def_->BaseName << "{\n";
-        out << "    struct ResultType{\n";
-        for (auto const& field : def_->Fields) {
-            out << "        double " << field << " = 0.0;\n";
-        };
-        out << "    };\n";
-        out << "    virtual ~" << def_->BaseName << "()=default;\n";
-        out << "    virtual ResultType " << def_->FunctionName << "(\n";
-        for (size_t idx = 0; idx != def_->Args.size(); ++idx) {
-            out << "        " << (idx == 0 ? "  " : ", ") << "double " << def_->Args[idx] << (idx + 1 == def_->Args.size() ? ")const=0;\n" : "\n");
-        }
-        out << "    using map_ty = std::unordered_map<std::string, std::shared_ptr<" << def_->BaseName << "> >;\n";
-        out << "    static map_ty& AllImplementations(){\n";
-        out << "            static map_ty mem;\n";
-        out << "            return mem;\n";
-        out << "    }\n";
-        out << "};\n";
-        out << "\n";
-        auto RegisterBaseBame = "Register" + def_->BaseName;
-        out << "template<class T>\n";
-        out << "struct " << RegisterBaseBame << "{\n";
-        out << "    template<class... Args>\n";
-        out << "    " << RegisterBaseBame << "(std::string const& name, Args&&... args){\n";
-        out << "        " << def_->BaseName << "::AllImplementations()[name] = std::make_shared<T>(std::forward<Args>(args)...);\n";
-        out << "    }\n";
-        out << "};\n";
-        out << "\n";
-
-
-
-        for (auto func : vec_) {
-            out << "struct " << func->ImplName << " : " << def_->BaseName << "{\n";
-            out << "    virtual ResultType " << def_->FunctionName << "(\n";
-            for (size_t idx = 0; idx != def_->Args.size(); ++idx) {
-                out << "        " << (idx == 0 ? "  " : ", ") << "double " << def_->Args[idx] << (idx + 1 == def_->Args.size() ? ")const override{\n" : "\n");
-            }
-            func->IB->EmitCode(out);
-            out << "        ResultType result;\n";
-            for (auto const& p : func->ResultMapping) {
-                out << "        result." << p.first << " = " << p.second << ";\n";
-            }
-            out << "        return result;\n";
-            out << "    }\n";
-            out << "};\n";
-            out << "static " << RegisterBaseBame << "<" << func->ImplName << "> Reg" << func->ImplName << "(\"" << func->ImplName << "\");\n";
-        }
-
-
-        out << "int main(){\n";
-        out << "    enum{ InitialCount = 10000 };\n";
-        out << "    double t       = 0.0;\n";
-        out << "    double T       = 10.0;\n";
-        out << "    double r       = 0.04;\n";
-        out << "    double S       = 50;\n";
-        out << "    double K       = 60;\n";
-        out << "    double vol     = 0.2;\n";
-        out << "    double epsilon = 1e-10;\n";
-        out << "\n";
-        out << "    // get all implementations\n";
-        out << "    auto impls = " << def_->BaseName << "::AllImplementations();\n";
-        out << "\n";
-        out << "    // print header\n";
-        out << "    std::vector<std::string> header{\"N\"}; \n";
-        out << "    for(auto impl : impls ){\n";
-        out << "        header.push_back(impl.first);\n";
-        out << "    }\n";
-        out << "    auto print_line = [](std::vector<std::string> const& line_vec){ for(size_t idx=0;idx!=line_vec.size();++idx){ std::cout << (idx==0?\"\":\",\") << line_vec[idx];} std::cout << '\\n'; };\n";
-        out << "    print_line(header);\n";
-        out << "\n";
-        out << "\n";
-        enum { PrintCheck = 1 };
-        if (PrintCheck)
-        {
-            out << "    std::vector<std::string> check;\n";
-            out << "    auto proto_name = \"NaiveBlack\";\n";
-            out << "    auto proto = impls[proto_name];\n";
-            out << "    auto baseline = proto->" << def_->FunctionName << "(t,T,r,S,K,vol);\n";
-            for (auto const& field : def_->Fields) {
-                out << "    check.clear();\n";
-                out << "    check.push_back(\"" << field << "\");\n";
-                out << "    for(auto impl : impls ){\n";
-                out << "        check.push_back(std::to_string(impl.second->" << def_->FunctionName << "(t,T,r,S,K,vol)." << field << "));\n";
-                out << "    }\n";
-                out << "    check.push_back(std::to_string((proto->" << def_->FunctionName << "(";
-                for (size_t idx = 0; idx != def_->Args.size(); ++idx) {
-                    out << (idx == 0 ? "" : ",") << def_->Args[idx];
-                    if ("d_" + def_->Args[idx] == field) {
-                        out << "+epsilon";
-                    }
-                }
-                out << ").c-baseline.c)/epsilon));\n";
-
-                out << "    print_line(check);\n";
-            }
-        }
-
-        out << "    for(volatile size_t N = 100;N<100000;N*=2){\n";
-        out << "        std::vector<std::string> line;\n";
-        out << "        line.push_back(std::to_string(N));\n";
-        out << "        for(auto impl : impls ){\n";
-        out << "            cpu_timer timer;\n";
-        out << "            for(volatile size_t idx=0;idx!=N;++idx){\n";
-        out << "                auto result = impl.second->" << def_->FunctionName << "(t,T,r,S,K,vol);\n";
-        out << "            }\n";
-        out << "            line.push_back(timer.format());\n";
-        out << "        }\n";
-        out << "        print_line(line);\n";
-        out << "    }\n";
-        out << "}\n";
-
-
-    }
-private:
-    std::shared_ptr<ProfileFunctionDefinition> def_;
-    std::vector<std::shared_ptr<ProfileFunction> > vec_;
-};
-
-
-struct NaiveBlackProfile : ProfileFunction {
-    NaiveBlackProfile() {
-        ImplName = "NaiveBlack";
-        auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
-
-        auto as_black = ad_kernel.Evaluate(
-            DoubleKernel::BuildFromExo("t"),
-            DoubleKernel::BuildFromExo("T"),
-            DoubleKernel::BuildFromExo("r"),
-            DoubleKernel::BuildFromExo("S"),
-            DoubleKernel::BuildFromExo("K"),
-            DoubleKernel::BuildFromExo("vol")
-        );
-
-        auto expr = as_black.as_operator_();
-
-        IB = std::make_shared<InstructionBlock>();
-        auto deps = expr->DepthFirstAnySymbolicDependencyAndThis();
-        for (auto head : deps.DepthFirst) {
-            if (head->IsExo())
-                continue;
-            auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
-            IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
-        }
-        ResultMapping["c"] = deps.DepthFirst.back()->Name();
-    }
-};
-
-struct NaiveBlackSingleProfile : ProfileFunction {
-    NaiveBlackSingleProfile() {
-        ImplName = "NaiveBlackSingle";
-        auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
-
-        auto as_black = ad_kernel.Evaluate(
-            DoubleKernel::BuildFromExo("t"),
-            DoubleKernel::BuildFromExo("T"),
-            DoubleKernel::BuildFromExo("r"),
-            DoubleKernel::BuildFromExo("S"),
-            DoubleKernel::BuildFromExo("K"),
-            DoubleKernel::BuildFromExo("vol")
-        );
-
-        auto expr = as_black.as_operator_();
-
-        struct RemoveEndo : OperatorTransform {
-            virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr) {
-                auto candidate = ptr->Clone(shared_from_this());
-                if (candidate->Kind() == OPKind_EndgenousSymbol) {
-                    if (auto typed = std::dynamic_pointer_cast<EndgenousSymbol>(candidate)) {
-                        return typed->Expr();
-                    }
-                }
-                return candidate;
-            }
-        };
-        auto single_expr = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemoveEndo>());
-
-
-        IB = std::make_shared<InstructionBlock>();
-        IB->Add(std::make_shared<InstructionDeclareVariable>("c", single_expr));
-        ResultMapping["c"] = "c";
-
-    }
-};
-
-struct NaiveBlackThreeAddressProfile : ProfileFunction {
-    NaiveBlackThreeAddressProfile() {
-        ImplName = "NaiveBlackThreeAddress";
-        auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
-
-        auto as_black = ad_kernel.Evaluate(
-            DoubleKernel::BuildFromExo("t"),
-            DoubleKernel::BuildFromExo("T"),
-            DoubleKernel::BuildFromExo("r"),
-            DoubleKernel::BuildFromExo("S"),
-            DoubleKernel::BuildFromExo("K"),
-            DoubleKernel::BuildFromExo("vol")
-        );
-
-        auto expr = as_black.as_operator_();
-        //auto unique = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemapUnique>());
-        auto unique = expr->Clone(std::make_shared<Transform::RemapUnique>());
-
-
-
-        IB = std::make_shared<InstructionBlock>();
-        auto deps = unique->DepthFirstAnySymbolicDependencyAndThis();
-        for (auto head : deps.DepthFirst) {
-            if (head->IsExo())
-                continue;
-            auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
-            IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
-        }
-        ResultMapping["c"] = deps.DepthFirst.back()->Name();
-
-    }
-};
-
-struct NaiveBlackForwardThreeAddressProfile : ProfileFunction {
-    NaiveBlackForwardThreeAddressProfile() {
-        ImplName = "NaiveBlackForwardThreeAddress";
-        auto ad_kernel = BlackScholesCallOption::Build<DoubleKernel>{};
-
-        auto as_black = ad_kernel.Evaluate(
-            DoubleKernel::BuildFromExo("t"),
-            DoubleKernel::BuildFromExo("T"),
-            DoubleKernel::BuildFromExo("r"),
-            DoubleKernel::BuildFromExo("S"),
-            DoubleKernel::BuildFromExo("K"),
-            DoubleKernel::BuildFromExo("vol")
-        );
-
-        auto expr = as_black.as_operator_();
-        //auto unique = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemapUnique>());
-        auto RU = std::make_shared<Transform::RemapUnique>();
-        auto unique = expr->Clone(RU);
-
-
-        std::unordered_set<std::string> three_addr_seen;
-
-        IB = std::make_shared<InstructionBlock>();
-        auto deps = unique->DepthFirstAnySymbolicDependencyAndThis();
-        for (auto head : deps.DepthFirst) {
-            if (head->IsExo())
-                continue;
-            if (three_addr_seen.count(head->Name()) == 0) {
-                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
-                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
-                three_addr_seen.insert(head->Name());
-            }
-        }
-        ResultMapping["c"] = deps.DepthFirst.back()->Name();
-
-        struct RemoveEndo : OperatorTransform {
-            virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr) {
-                auto candidate = ptr->Clone(shared_from_this());
-                if (candidate->Kind() == OPKind_EndgenousSymbol) {
-                    if (auto typed = std::dynamic_pointer_cast<EndgenousSymbol>(candidate)) {
-                        return typed->Expr();
-                    }
-                }
-                return candidate;
-            }
-        };
-        auto single_expr = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemoveEndo>());
-
-        std::vector<std::string> exo{ "t", "T", "r", "S", "K", "vol" };
-#if 1
-        for (auto sym : exo) {
-            auto sym_diff = single_expr->Diff(sym);
-#if 0
-            auto sym_diff_unique = EndgenousSymbol::Make("d_" + sym, sym_diff->Clone(std::make_shared<RemapUnique>("__d_" + sym)));
-#endif
-            auto sym_diff_unique = EndgenousSymbol::Make("d_" + sym, sym_diff->Clone(RU));
-            auto deps = sym_diff_unique->DepthFirstAnySymbolicDependencyAndThis();
-            for (auto head : deps.DepthFirst) {
-                if (head->IsExo())
-                    continue;
-                if (three_addr_seen.count(head->Name()) == 0) {
-                    auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
-                    IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
-                    three_addr_seen.insert(head->Name());
-                }
-            }
-            ResultMapping["d_" + sym] = deps.DepthFirst.back()->Name();
-        }
-#else
-        for (auto sym : exo) {
-            IB->Add(std::make_shared<InstructionDeclareVariable>("d_" + sym, single_expr->Diff(sym)));
-            ResultMapping["d_" + sym] = "d_" + sym;
-        }
-#endif
-    }
-};
-
-struct SimpleTest0 {
-    template<class Double>
-    struct Build {
-        Double Evaluate(
-            Double x,
-            Double y)
-            const
-        {
-            return x * x + y * y * y;
-
-        }
-        Double EvaluateVec(std::vector<Double> const& args)
-        {
-            if (args.size() != 2)
-            {
-                throw std::runtime_error("bad number of args");
-            }
-            return Evaluate(args[0], args[1]);
-        }
-        std::vector<std::string> Arguments()const
-        {
-            return { "x", "y" };
-        }
-        std::string Name()const
-        {
-            return "SimpleTest0";
-        }
-    };
-};
 
 
 struct BlackScholesCallOptionTest {
@@ -503,419 +79,231 @@ struct BlackScholesCallOptionTest {
 };
 
 
-struct SimpleTest3 {
-    template<class Double>
-    struct Build {
-        Double Evaluate(
-            Double x,
-            Double y,
-            Double z)const
-        {
-            Double a0 = x * x;
-            Double a1 = y * y;
-            Double a2 = z * z;
-            Double a3 = x * y;
-            Double a4 = x * z;
-            Double a5 = y * z;
-
-            Double b0 = a0 * a1 + a2;
-            Double b1 = a1 * a2 + a3;
-            Double b2 = a2 * a3 + a4;
-            Double b3 = a3 * a4 + a5;
-            Double b4 = a4 * a5 + a0;
-
-            Double c1 = b0 * b1 + b3;
-            Double c2 = b1 * b2 + b3;
-
-            Double result = c2 * c1;
-
-            return result;
-
-        }
-    };
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-void driver()
+template<class Function>
+class AADFunctionGenerator
 {
-    auto ad_kernel = BlackScholesCallOptionTest::Build<DoubleKernel>{};
-
-    auto arguments = ad_kernel.Arguments();
-
-    std::vector<DoubleKernel> symbolc_arguments;
-    for (auto const& arg : arguments)
+public:
+    std::shared_ptr<InstructionBlock> GenerateInstructionBlock()const
     {
-        symbolc_arguments.push_back(DoubleKernel::BuildFromExo(arg));
-    }
-    auto as_black = ad_kernel.EvaluateVec(symbolc_arguments);
+        auto ad_kernel = Function::template Build<DoubleKernel>();
 
-    auto expr = as_black.as_operator_();
-    //auto unique = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemapUnique>());
-    auto RU = std::make_shared<Transform::RemapUnique>();
-    auto unique = expr->Clone(RU);
+        auto arguments = ad_kernel.Arguments();
 
-    auto exo_symbols = unique->ExogenousDependencies();
-
-
-    std::unordered_set<std::string> three_addr_seen;
-
-    auto IB = std::make_shared<InstructionBlock>();
-    
-    auto deps = unique->DepthFirstAnySymbolicDependencyAndThis();
-    for (auto head : deps.DepthFirst) {
-        if (head->IsExo())
-            continue;
-        if (three_addr_seen.count(head->Name()) == 0) {
-            auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
-            IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
-            three_addr_seen.insert(head->Name());
-        }
-
-    }
-    IB->Add(std::make_shared< InstructionReturn>(deps.DepthFirst.back()->Name()));
-
-
-    auto AADIB = std::make_shared<InstructionBlock>();
-
-    // IB->EmitCode(std::cout);
-
-    std::vector< std::shared_ptr<InstructionDeclareVariable> > decl_list;
-
-    std::vector<std::shared_ptr< ImpliedMatrixFunction >> matrix_func_list;
-
-    std::unordered_map<std::string, size_t> head_alloc_map;
-    for (size_t idx = 0; idx != arguments.size(); ++idx)
-    {
-        head_alloc_map[arguments[idx]] = head_alloc_map.size();
-    }
-    std::vector< std::unordered_map<std::string, size_t> > allocation_map_list{ head_alloc_map };
-
-
-
-
-    for (auto const& instr : *IB)
-    {
-
-        auto alloc_map = allocation_map_list.back();
-
-        if (auto decl_instr = std::dynamic_pointer_cast<InstructionDeclareVariable>(instr))
+        std::vector<DoubleKernel> symbolc_arguments;
+        for (auto const& arg : arguments)
         {
-            decl_list.push_back(decl_instr);
-
-            std::vector<std::string> comment_vec;
-
-            auto expr = decl_instr->as_operator_();
-            auto matrix_func = ImpliedMatrixFunction::Make(matrix_func_list.size(), instr);
-
-
-            alloc_map[decl_instr->LValueName()] = alloc_map.size();
-
-            AADIB->Add(matrix_func->MakeComment());
-            AADIB->Add(decl_instr);
-
-            matrix_func_list.push_back(matrix_func);
-            allocation_map_list.push_back(alloc_map);
-
-
+            symbolc_arguments.push_back(DoubleKernel::BuildFromExo(arg));
         }
-        else
-        {
-            // default
-            AADIB->Add(instr);
-        }
+        auto as_black = ad_kernel.EvaluateVec(symbolc_arguments);
 
-    }
+        auto expr = as_black.as_operator_();
+        auto RU = std::make_shared<Transform::RemapUnique>();
+        auto unique = expr->Clone(RU);
 
-    AADIB->Add(std::make_shared<InstructionComment>(std::vector<std::string>{ "//////////////", "Starting AAD matrix", "//////////////", }));
-    std::vector<std::string> matrix_lvalues;
-
-    std::vector<std::shared_ptr<SymbolicMatrix> > adj_matrix_list;
-    for (size_t idx = matrix_func_list.size(); idx != 0; )
-    {
-        bool is_terminal = (idx == matrix_func_list.size());
-        --idx;
-        auto const& alloc_map = allocation_map_list[idx];
-        //AADIB->Add(matrix_func_list[idx]->MakeComment());
-
-        auto matrix_decl = matrix_func_list[idx]->MakeMatrix(alloc_map, is_terminal);
-
-        adj_matrix_list.push_back(matrix_decl->Matrix());
-
-        matrix_lvalues.push_back(matrix_decl->LValueName());
-        //AADIB->Add(matrix_decl);
-    }
-
-    // fold matrix list
-    std::shared_ptr<SymbolicMatrix> adj_matrix = adj_matrix_list[0];
-    for (size_t idx = 1; idx < adj_matrix_list.size(); ++idx)
-    {
-        adj_matrix = adj_matrix_list[idx]->Multiply(*adj_matrix);
-    }
-
-    // ADIB->Add(std::make_shared < InstructionDeclareMatrix> ("DD", adj_matrix));
-
-#if 0
-    for (size_t idx = 0; idx != arguments.size(); ++idx)
-    {
-        auto d_sym = std::string("d_") + arguments[idx];
-        auto d_expr = adj_matrix->At(idx, 0);
-        std::stringstream ss;
-        ss << "if( " << d_sym << ") { *" << d_sym << " = ";
-        d_expr->EmitCode(ss);
-        ss << "; }";
-        AADIB->Add(std::make_shared< InstructionText>(ss.str()));
-    }
-#endif
-
-    for (size_t idx = 0; idx != arguments.size(); ++idx)
-    {
-        auto d_sym = std::string("d_") + arguments[idx];
-        auto d_expr_orig = adj_matrix->At(idx, 0);
-        auto d_expr = d_expr_orig->Clone(RU);
+        auto exo_symbols = unique->ExogenousDependencies();
 
 
-        std::stringstream ss;
-#if 0
-        ss << "const double debug__" << d_sym << " = ";
-        d_expr_orig->EmitCode(ss);
-        ss << ";";
-        AADIB->Add(std::make_shared< InstructionText>(ss.str()));
-#endif
+        std::unordered_set<std::string> three_addr_seen;
 
-        auto deps = d_expr->DepthFirstAnySymbolicDependencyAndThis();
+        auto IB = std::make_shared<InstructionBlock>();
+
+        auto deps = unique->DepthFirstAnySymbolicDependencyAndThis();
         for (auto head : deps.DepthFirst) {
             if (head->IsExo())
                 continue;
             if (three_addr_seen.count(head->Name()) == 0) {
                 auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
-                AADIB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
                 three_addr_seen.insert(head->Name());
             }
 
         }
-
-        std::string aux_name = "result_" + d_sym;
-        AADIB->Add(std::make_shared<InstructionDeclareVariable>(aux_name, d_expr));
-
-        ss.str("");
-        ss << "if( " << d_sym << ") { *" << d_sym << " = " << aux_name  << "; }";
-        AADIB->Add(std::make_shared< InstructionText>(ss.str()));
-    }
-
-   
+        IB->Add(std::make_shared< InstructionReturn>(deps.DepthFirst.back()->Name()));
 
 
+        auto AADIB = std::make_shared<InstructionBlock>();
+
+        // IB->EmitCode(std::cout);
+
+        std::vector< std::shared_ptr<InstructionDeclareVariable> > decl_list;
+
+        std::vector<std::shared_ptr< ImpliedMatrixFunction >> matrix_func_list;
+
+        std::unordered_map<std::string, size_t> head_alloc_map;
+        for (size_t idx = 0; idx != arguments.size(); ++idx)
+        {
+            size_t slot = head_alloc_map.size();
+            head_alloc_map[arguments[idx]] = slot;
+        }
+        std::vector< std::unordered_map<std::string, size_t> > allocation_map_list{ head_alloc_map };
+
+
+
+
+        for (auto const& instr : *IB)
+        {
+
+            
+
+            if (auto decl_instr = std::dynamic_pointer_cast<InstructionDeclareVariable>(instr))
+            {
+
+                auto alloc_map = allocation_map_list.back();
+
+                decl_list.push_back(decl_instr);
+
+                std::vector<std::string> comment_vec;
+
+                auto expr = decl_instr->as_operator_();
+                auto matrix_func = ImpliedMatrixFunction::Make(matrix_func_list.size(), instr);
+
+                size_t slot = head_alloc_map.size();
+                alloc_map[decl_instr->LValueName()] = slot;
+
+                AADIB->Add(matrix_func->MakeComment());
+                AADIB->Add(decl_instr);
+
+                matrix_func_list.push_back(matrix_func);
+                allocation_map_list.push_back(alloc_map);
+
+
+            }
+            else
+            {
+                // default
+                AADIB->Add(instr);
+            }
+
+        }
+
+        AADIB->Add(std::make_shared<InstructionComment>(std::vector<std::string>{ "//////////////", "Starting AAD matrix", "//////////////", }));
+        std::vector<std::string> matrix_lvalues;
+
+        std::vector<std::shared_ptr<SymbolicMatrix> > adj_matrix_list;
+        for (size_t idx = matrix_func_list.size(); idx != 0; )
+        {
+            bool is_terminal = (idx == matrix_func_list.size());
+            --idx;
+            auto const& alloc_map = allocation_map_list[idx];
+            //AADIB->Add(matrix_func_list[idx]->MakeComment());
+
+            auto matrix_decl = matrix_func_list[idx]->MakeMatrix(alloc_map, is_terminal);
+
+            adj_matrix_list.push_back(matrix_decl->Matrix());
+
+            matrix_lvalues.push_back(matrix_decl->LValueName());
+            //AADIB->Add(matrix_decl);
+        }
+
+        // fold matrix list
+        std::shared_ptr<SymbolicMatrix> adj_matrix = adj_matrix_list[0];
+        for (size_t idx = 1; idx < adj_matrix_list.size(); ++idx)
+        {
+            adj_matrix = adj_matrix_list[idx]->Multiply(*adj_matrix);
+        }
+
+        // ADIB->Add(std::make_shared < InstructionDeclareMatrix> ("DD", adj_matrix));
 
 #if 0
-    std::string head = matrix_lvalues[0];
-    for (size_t idx = 1; idx < matrix_lvalues.size(); ++idx)
-    {
-        head = "(" + matrix_lvalues[idx] + "*" + head + ")";
-    }
-    AADIB->Add(std::make_shared< InstructionText>("auto D = " + head + ";"));
-
-    for (size_t idx = 0; idx != arguments.size(); ++idx)
-    {
-        auto d_sym = std::string("d_") + arguments[idx];
-        AADIB->Add(std::make_shared< InstructionText>("if( " + d_sym + ") { *" + d_sym + " = D[" + std::to_string(idx) + "]; }"));
-    }
+        for (size_t idx = 0; idx != arguments.size(); ++idx)
+        {
+            auto d_sym = std::string("d_") + arguments[idx];
+            auto d_expr = adj_matrix->At(idx, 0);
+            std::stringstream ss;
+            ss << "if( " << d_sym << ") { *" << d_sym << " = ";
+            d_expr->EmitCode(ss);
+            ss << "; }";
+            AADIB->Add(std::make_shared< InstructionText>(ss.str()));
+        }
 #endif
-    
-    
-    std::vector<std::string> arg_list;
-    for(size_t idx = 0; idx != arguments.size(); ++idx)
-    {
-        arg_list.push_back("double " + arguments[idx]);
+
+        for (size_t idx = 0; idx != arguments.size(); ++idx)
+        {
+            auto d_sym = std::string("d_") + arguments[idx];
+            auto d_expr_orig = adj_matrix->At(idx, 0);
+            auto d_expr = d_expr_orig->Clone(RU);
+
+
+            std::stringstream ss;
+#if 0
+            ss << "const double debug__" << d_sym << " = ";
+            d_expr_orig->EmitCode(ss);
+            ss << ";";
+            AADIB->Add(std::make_shared< InstructionText>(ss.str()));
+#endif
+
+            auto deps = d_expr->DepthFirstAnySymbolicDependencyAndThis();
+            for (auto head : deps.DepthFirst) {
+                if (head->IsExo())
+                    continue;
+                if (three_addr_seen.count(head->Name()) == 0) {
+                    auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                    AADIB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                    three_addr_seen.insert(head->Name());
+                }
+
+            }
+
+            std::string aux_name = "result_" + d_sym;
+            AADIB->Add(std::make_shared<InstructionDeclareVariable>(aux_name, d_expr));
+
+            ss.str("");
+            ss << "if( " << d_sym << ") { *" << d_sym << " = " << aux_name << "; }";
+            AADIB->Add(std::make_shared< InstructionText>(ss.str()));
+        }
+
+        return AADIB;
     }
-    for (size_t idx = 0; idx != arguments.size(); ++idx)
+
+    void EmitToString(std::ostream& ostr)const
     {
-        arg_list.push_back("double* d_" + arguments[idx] + " = nullptr");
+        auto ad_kernel = Function::template Build<DoubleKernel>();
+
+        auto AADIB = this->GenerateInstructionBlock();
+
+        auto arguments = ad_kernel.Arguments();
+
+        std::vector<std::string> arg_list;
+        for (size_t idx = 0; idx != arguments.size(); ++idx)
+        {
+            arg_list.push_back("double " + arguments[idx]);
+        }
+        for (size_t idx = 0; idx != arguments.size(); ++idx)
+        {
+            arg_list.push_back("double* d_" + arguments[idx] + " = nullptr");
+        }
+
+
+        ostr << "double " << ad_kernel.Name() << "(";
+        for (size_t idx = 0; idx != arg_list.size(); ++idx)
+        {
+            ostr << (idx == 0 ? "" : ", ") << arg_list[idx];
+        }
+        ostr << ")\n{\n";
+        for (auto const& instr : *AADIB)
+        {
+            instr->EmitCode(ostr);
+            ostr << "\n";
+        }
+        ostr << "}\n";
+    }
+    std::string GenerateString()const
+    {
+        std::stringstream ss;
+        this->EmitToString(ss);
+        return ss.str();
     }
 
+};
 
-    std::cout << "double " << ad_kernel.Name() << "(";
-    for (size_t idx = 0; idx != arg_list.size(); ++idx)
-    {
-        std::cout << (idx == 0 ? "" : ", ") << arg_list[idx];
-    }
-    std::cout << ")\n{\n";
-    for (auto const& instr : *AADIB)
-    {
-        instr->EmitCode(std::cout);
-        std::cout << "\n";
-    }
-    std::cout << "}\n";
-
-
-    
-   
-}
-
-#include <Eigen/Dense>
-
-double SimpleTest0(double x, double y, double* d_x = nullptr, double* d_y = nullptr)
+void driver()
 {
-    // Matrix function F_0 => __symbol_4
-    //     x => 1
-
-    double const __symbol_4 = x;
-
-    // Matrix function F_1 => __symbol_5
-    //     __symbol_4 => ((__symbol_4)+(__symbol_4))
-
-    double const __symbol_5 = ((__symbol_4) * (__symbol_4));
-
-    // Matrix function F_2 => __symbol_1
-    //     y => 1
-
-    double const __symbol_1 = y;
-
-    // Matrix function F_3 => __symbol_2
-    //     __symbol_1 => ((__symbol_1)+(__symbol_1))
-
-    double const __symbol_2 = ((__symbol_1) * (__symbol_1));
-
-    // Matrix function F_4 => __symbol_3
-    //     __symbol_2 => __symbol_1
-    //     __symbol_1 => __symbol_2
-
-    double const __symbol_3 = ((__symbol_2) * (__symbol_1));
-
-    // Matrix function F_5 => __symbol_6
-    //     __symbol_5 => 1
-    //     __symbol_3 => 1
-
-    double const __symbol_6 = ((__symbol_5)+(__symbol_3));
-
-    // Matrix function F_6 => __statement_0
-    //     __symbol_6 => 1
-
-    double const __statement_0 = __symbol_6;
-
-    // //////////////
-    // Starting AAD matrix
-    // //////////////
-
-    // Matrix function F_6 => __statement_0
-    //     __symbol_6 => 1
-
-    const Eigen::Matrix<double, 8, 1>adj_matrix_6{
-{0}
-, {0}
-, {0}
-, {0}
-, {0}
-, {0}
-, {0}
-, {1}
-    };
-
-    // Matrix function F_5 => __symbol_6
-    //     __symbol_5 => 1
-    //     __symbol_3 => 1
-
-    const Eigen::Matrix<double, 7, 8>adj_matrix_5{
-{1, 0, 0, 0, 0, 0, 0, 0}
-, {0, 1, 0, 0, 0, 0, 0, 0}
-, {0, 0, 1, 0, 0, 0, 0, 0}
-, {0, 0, 0, 1, 0, 0, 0, 1}
-, {0, 0, 0, 0, 1, 0, 0, 0}
-, {0, 0, 0, 0, 0, 1, 0, 0}
-, {0, 0, 0, 0, 0, 0, 1, 1}
-    };
-
-    // Matrix function F_4 => __symbol_3
-    //     __symbol_2 => __symbol_1
-    //     __symbol_1 => __symbol_2
-
-    const Eigen::Matrix<double, 6, 7>adj_matrix_4{
-{1, 0, 0, 0, 0, 0, 0}
-, {0, 1, 0, 0, 0, 0, 0}
-, {0, 0, 1, 0, 0, 0, 0}
-, {0, 0, 0, 1, 0, 0, 0}
-, {0, 0, 0, 0, 1, 0, __symbol_2}
-, {0, 0, 0, 0, 0, 1, __symbol_1}
-    };
-
-    // Matrix function F_3 => __symbol_2
-    //     __symbol_1 => ((__symbol_1)+(__symbol_1))
-
-    const Eigen::Matrix<double, 5, 6>adj_matrix_3{
-{1, 0, 0, 0, 0, 0}
-, {0, 1, 0, 0, 0, 0}
-, {0, 0, 1, 0, 0, 0}
-, {0, 0, 0, 1, 0, 0}
-, {0, 0, 0, 0, 1, ((__symbol_1)+(__symbol_1))}
-    };
-
-    // Matrix function F_2 => __symbol_1
-    //     y => 1
-
-    const Eigen::Matrix<double, 4, 5>adj_matrix_2{
-{1, 0, 0, 0, 0}
-, {0, 1, 0, 0, 1}
-, {0, 0, 1, 0, 0}
-, {0, 0, 0, 1, 0}
-    };
-
-    // Matrix function F_1 => __symbol_5
-    //     __symbol_4 => ((__symbol_4)+(__symbol_4))
-
-    const Eigen::Matrix<double, 3, 4>adj_matrix_1{
-{1, 0, 0, 0}
-, {0, 1, 0, 0}
-, {0, 0, 1, ((__symbol_4)+(__symbol_4))}
-    };
-
-    // Matrix function F_0 => __symbol_4
-    //     x => 1
-
-    const Eigen::Matrix<double, 2, 3>adj_matrix_0{
-{1, 0, 1}
-, {0, 1, 0}
-    };
-
-    auto D = (adj_matrix_0 * (adj_matrix_1 * (adj_matrix_2 * (adj_matrix_3 * (adj_matrix_4 * (adj_matrix_5 * adj_matrix_6))))));
-
-    if (d_x) { *d_x = D[0]; }
-
-    if (d_y) { *d_y = D[1]; }
-
-    return __statement_0;
-
+    using generater_ty = AADFunctionGenerator<BlackScholesCallOptionTest>;
+    generater_ty generator;
+    std::string function_def = generator.GenerateString();
+    std::cout << function_def << "\n";
 }
 
-int run_it() {
-    double x = 2.2;
-    double y = 3.3;
-
-    double d_x = 0;
-    double d_y = 0;
-
-    std::cout << "f=" << SimpleTest0(x, y, &d_x, &d_y) << "\n";
-    std::cout << "d_x = " << d_x << "\n";
-    std::cout << "d_y = " << d_y << "\n";
-
-
-    if (true)
-    {
-        double e = 0.00001;
-        std::cout << "d_x=" << ((SimpleTest0(x + e, y) - SimpleTest0(x - e, y)) / 2 / e) << "\n";
-        std::cout << "d_y=" << ((SimpleTest0(x, y + e) - SimpleTest0(x, y - e)) / 2 / e) << "\n";
-    }
-    return 0;
-}
 
 double BlackScholesCallOptionTestBareMetalNOADD(double t, double T, double r, double S, double K, double vol)
 {
@@ -1562,7 +950,7 @@ void test_bs() {
 
 int main()
 {
-    enum{ RunDriver = 0};
+    enum{ RunDriver = 1};
     if( RunDriver )
     {
         driver();
