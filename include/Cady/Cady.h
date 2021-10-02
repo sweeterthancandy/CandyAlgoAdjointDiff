@@ -53,6 +53,9 @@ struct EndgenousSymbol;
 using  EndgenousSymbolSet = std::unordered_set<std::shared_ptr<EndgenousSymbol > >;
 using  EndgenousSymbolVec = std::vector<std::shared_ptr<EndgenousSymbol > >;
 
+struct ExogenousSymbol;
+using  ExogenousSymbolSet = std::unordered_set<std::shared_ptr<ExogenousSymbol > >;
+
 struct Operator;
 struct Symbol;
 
@@ -292,22 +295,43 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 EndgenousDependenciesCollect(mem);
                 return mem;
         }
-        virtual void EndgenousDependenciesCollect(EndgenousSymbolSet& mem){
-                std::vector<std::shared_ptr<Operator > > stack{shared_from_this()};
-                for(;stack.size();){
-                        auto head = stack.back();
-                        stack.pop_back();
-                        #if 0
-                        std::cout << std::string(stack.size()*2, ' ') << head->NameWithHidden() << "\n";
-                        #endif
-                        for(auto& ptr : head->children_){
-                                if( ptr->Kind() == OPKind_EndgenousSymbol){
-                                        mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
-                                } else {
-                                        stack.push_back(ptr);
-                                }
-                        }
+        virtual void EndgenousDependenciesCollect(EndgenousSymbolSet& mem) {
+            std::vector<std::shared_ptr<Operator > > stack{ shared_from_this() };
+            for (; stack.size();) {
+                auto head = stack.back();
+                stack.pop_back();
+
+                for (auto& ptr : head->children_) {
+                    if (ptr->Kind() == OPKind_EndgenousSymbol) {
+                        mem.insert(std::reinterpret_pointer_cast<EndgenousSymbol>(ptr));
+                    }
+                    else {
+                        stack.push_back(ptr);
+                    }
                 }
+            }
+        }
+
+
+        ExogenousSymbolSet ExogenousDependencies() {
+            ExogenousSymbolSet mem;
+            ExogenousDependenciesCollect(mem);
+            return mem;
+        }
+        virtual void ExogenousDependenciesCollect(ExogenousSymbolSet& mem) {
+            std::vector<std::shared_ptr<Operator > > stack{ shared_from_this() };
+            for (; stack.size();) {
+                auto head = stack.back();
+                stack.pop_back();
+                for (auto& ptr : head->children_) {
+                    if (ptr->Kind() == OPKind_ExogenousSymbol) {
+                        mem.insert(std::reinterpret_pointer_cast<ExogenousSymbol>(ptr));
+                    }
+                    else {
+                        stack.push_back(ptr);
+                    }
+                }
+            }
         }
 protected:
         size_t Push(std::shared_ptr<Operator> const& ptr){
