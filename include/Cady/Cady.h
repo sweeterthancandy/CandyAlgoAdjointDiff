@@ -375,7 +375,12 @@ struct Constant : Operator{
                 return Constant::Make(0.0);
         }
         virtual void EmitCode(std::ostream& ss)const override{
-                ss << value_;
+            std::string str = std::to_string(value_);
+            if (str.find('e') == std::string::npos && str.find('E') == std::string::npos && str.find('.') == std::string::npos)
+            {
+                str += ".0";
+            }
+            ss << str;
         }
 
         static std::shared_ptr<Operator> Make(double value){
