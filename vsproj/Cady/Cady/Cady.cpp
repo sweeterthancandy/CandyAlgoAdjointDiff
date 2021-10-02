@@ -11,6 +11,8 @@
 #include "Cady/Frontend.h"
 #include "Cady/Transform.h"
 #include "Cady/Cady.h"
+#include "Cady/SymbolicMatrix.h"
+#include "Cady/Instruction.h"
 
 #include <map>
 #include <functional>
@@ -20,209 +22,6 @@ using namespace Cady;
 
 
 
-enum InstructionKind {
-    Instr_VarDecl,
-    Instr_MatrixDecl,
-    Instr_Text,
-    Instr_PointerAssignment,
-    Instr_Return,
-    Instr_Comment,
-};
-struct Instruction {
-    explicit Instruction(InstructionKind kind)
-        :kind_(kind)
-    {}
-    virtual ~Instruction() = default;
-    InstructionKind Kind()const { return kind_; }
-    virtual void EmitCode(std::ostream& out)const = 0;
-private:
-    InstructionKind kind_;
-};
-struct InstructionComment : Instruction {
-    InstructionComment(std::vector<std::string> const& text)
-        :Instruction{ Instr_Comment }
-        , text_{ text }
-    {}
-    virtual void EmitCode(std::ostream& out)const {
-        for (auto const& comment : text_) {
-            out << "    // " << comment << "\n";
-        }
-    }
-private:
-    std::vector<std::string> text_;
-};
-struct InstructionText : Instruction {
-    InstructionText(std::string const& text)
-        :Instruction{ Instr_Text }
-        , text_{ text }
-    {}
-    virtual void EmitCode(std::ostream& out)const {
-        out << "    " << text_ << "\n";
-    }
-private:
-    std::string text_;
-};
-struct InstructionDeclareVariable : Instruction {
-    InstructionDeclareVariable(std::string const& name, std::shared_ptr<Operator> op)
-        :Instruction{ Instr_VarDecl }
-        , name_(name)
-        , op_(op)
-    {}
-    virtual void EmitCode(std::ostream& out)const {
-        out << "    double const " << name_ << " = ";
-        op_->EmitCode(out);
-        out << ";\n";
-    }
-    auto const& as_operator_()const { return op_; }
-    std::string const& LValueName()const { return name_;  }
-private:
-    std::string name_;
-    std::shared_ptr<Operator> op_;
-};
-
-
-struct SymbolicMatrix
-{
-    SymbolicMatrix(
-        std::vector<std::vector<std::shared_ptr<Operator> > > const& matrix)
-    {
-        cols_ = matrix.front().size();
-        rows_ = matrix.size();
-        matrix_ = matrix;
-    }
-    std::shared_ptr<SymbolicMatrix> Multiply(SymbolicMatrix const& that)
-    {
-        /*
-        when we multiply a nxp and a pxq matrix, we get a n x q
-        */
-        if (cols_ != that.rows_)
-        {
-            throw std::runtime_error("cna't multiple matricies");
-        }
-
-        size_t result_rows = rows_;
-        size_t p = cols_;
-        size_t result_cols = that.cols_;
-
-        std::vector<std::vector<std::shared_ptr<Operator> > > result;
-        for (size_t i = 0; i != result_rows; ++i)
-        {
-            result.emplace_back();
-            for (size_t j = 0; j != result_cols; ++j)
-            {
-                std::shared_ptr<Operator> head;
-                for (size_t k = 0; k != p; ++k)
-                {
-                    auto const& left = this->At(i, k);
-                    auto const& right = that.At(k, j);
-                    auto term = BinaryOperator::Mul(left, right);
-                    if (head)
-                    {
-                        head = BinaryOperator::Add(head, term);
-                    }
-                    else
-                    {
-                        head = term;
-                    }
-                    
-                    
-                }
-
-                Transform::FoldZero fold_zero;
-                result.back().push_back(fold_zero.Fold(head));
-            }
-        }
-        return std::make_shared< SymbolicMatrix>(result);
-
-    }
-    std::shared_ptr<Operator> const& At(size_t i, size_t j)const
-    {
-        return matrix_.at(i).at(j);
-    }
-
-    std::vector<std::vector<std::shared_ptr<Operator> > > const& get_impl()const { return matrix_;  }
-private:
-    size_t rows_;
-    size_t cols_;
-    std::vector<std::vector<std::shared_ptr<Operator> > > matrix_;
-};
-struct InstructionDeclareMatrix : Instruction {
-    InstructionDeclareMatrix(std::string const& name, std::shared_ptr<SymbolicMatrix> const& matrix)
-        :Instruction{ Instr_VarDecl }
-        , name_(name)
-        , matrix_(matrix)
-    {}
-    virtual void EmitCode(std::ostream& out)const {
-        size_t rows = matrix_->get_impl().size();
-        size_t cols = matrix_->get_impl()[0].size();
-        out << "    const Eigen::Matrix<double, " << rows << "," << cols << ">" << name_ << " {\n";
-        for (size_t i = 0; i != rows; ++i)
-        {
-            out << (i == 0 ? "" : ", ") << "{";
-            for (size_t j = 0; j != cols; ++j)
-            {
-                out << (j == 0 ? "": ", ");
-                matrix_->get_impl().at(i).at(j)->EmitCode(out);
-            }
-            out << "}\n";
-        }
-        out << "};\n";
-    }
-    std::string const& LValueName()const { return name_; }
-    std::shared_ptr<SymbolicMatrix> const& Matrix()const {
-        return matrix_;
-    }
-private:
-    std::string name_;
-    std::shared_ptr<SymbolicMatrix> matrix_;
-};
-
-
-struct InstructionPointerAssignment : Instruction {
-    InstructionPointerAssignment(std::string const& name, std::string const& r_value)
-        :Instruction{ Instr_PointerAssignment }
-        , name_(name)
-        , r_value_{ r_value }
-    {}
-    virtual void EmitCode(std::ostream& out)const {
-        out << "    *" << name_ << " = " << r_value_ << ";\n";
-    }
-private:
-    std::string name_;
-    std::string r_value_;
-};
-struct InstructionReturn : Instruction {
-    InstructionReturn(std::string const& name)
-        :Instruction{ Instr_Return }
-        , name_(name)
-    {}
-    virtual void EmitCode(std::ostream& out)const {
-        out << "    return " << name_ << ";\n";
-    }
-private:
-    std::string name_;
-};
-
-struct InstructionBlock : std::vector<std::shared_ptr<Instruction> > {
-    virtual ~InstructionBlock() = default;
-    void Add(std::shared_ptr<Instruction> instr) {
-        // quick hack for now
-        if (size() > 0 && back()->Kind() == Instr_Return) {
-            auto tmp = back();
-            pop_back();
-            push_back(instr);
-            push_back(tmp);
-        }
-        else {
-            push_back(instr);
-        }
-    }
-    virtual void EmitCode(std::ostream& out)const {
-        for (auto const& ptr : *this) {
-            ptr->EmitCode(out);
-        }
-    }
-};
 
 
 
@@ -496,59 +295,7 @@ struct NaiveBlackSingleProfile : ProfileFunction {
 
     }
 };
-struct RemapUnique : OperatorTransform {
-    explicit RemapUnique(std::string const& prefix = "__symbol_")
-        : prefix_{ prefix }
-    {
-    }
-    ~RemapUnique() {
-    }
-    void mutate_prefix(std::string const& prefix) {
-        prefix_ = prefix;
-    }
-    virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr) {
 
-        auto candidate = ptr->Clone(shared_from_this());
-
-        auto key = std::make_tuple(
-            candidate->NameInvariantOfChildren(),
-            candidate->Children()
-        );
-
-        auto iter = ops_.find(key);
-        if (iter != ops_.end())
-            return iter->second;
-
-        if (
-            candidate->Kind() != OPKind_EndgenousSymbol &&
-#if 0
-            candidate->Kind() != OPKind_ExogenousSymbol &&
-#endif
-            candidate->Kind() != OPKind_Constant)
-        {
-
-            std::stringstream ss;
-            ss << prefix_ << (ops_.size() + 1);
-            auto endogous_sym = EndgenousSymbol::Make(ss.str(), candidate);
-
-            ops_[key] = endogous_sym;
-            return endogous_sym;
-        }
-        else {
-            ops_[key] = candidate;
-            return candidate;
-        }
-    }
-private:
-    std::string prefix_;
-    std::map<
-        std::tuple<
-        std::string,
-        std::vector<std::shared_ptr<Operator> >
-        >,
-        std::shared_ptr<Operator>
-    > ops_;
-};
 struct NaiveBlackThreeAddressProfile : ProfileFunction {
     NaiveBlackThreeAddressProfile() {
         ImplName = "NaiveBlackThreeAddress";
@@ -565,7 +312,7 @@ struct NaiveBlackThreeAddressProfile : ProfileFunction {
 
         auto expr = as_black.as_operator_();
         //auto unique = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemapUnique>());
-        auto unique = expr->Clone(std::make_shared<RemapUnique>());
+        auto unique = expr->Clone(std::make_shared<Transform::RemapUnique>());
 
 
 
@@ -598,7 +345,7 @@ struct NaiveBlackForwardThreeAddressProfile : ProfileFunction {
 
         auto expr = as_black.as_operator_();
         //auto unique = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemapUnique>());
-        auto RU = std::make_shared<RemapUnique>();
+        auto RU = std::make_shared<Transform::RemapUnique>();
         auto unique = expr->Clone(RU);
 
 
@@ -938,7 +685,7 @@ void driver()
 
     auto expr = as_black.as_operator_();
     //auto unique = std::reinterpret_pointer_cast<EndgenousSymbol>(expr)->Expr()->Clone(std::make_shared<RemapUnique>());
-    auto RU = std::make_shared<RemapUnique>();
+    auto RU = std::make_shared<Transform::RemapUnique>();
     auto unique = expr->Clone(RU);
 
     auto exo_symbols = unique->ExogenousDependencies();

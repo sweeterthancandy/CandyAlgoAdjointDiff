@@ -2,6 +2,7 @@
 #define INCLUDE_CADY_TRANSFORM_H
 
 #include "Cady.h"
+#include <map>
 
 namespace Cady{
 namespace Transform{
@@ -130,6 +131,61 @@ struct FoldZero{
                 }
                 return root;
         }
+};
+
+
+struct RemapUnique : OperatorTransform {
+    explicit RemapUnique(std::string const& prefix = "__symbol_")
+        : prefix_{ prefix }
+    {
+    }
+    ~RemapUnique() {
+    }
+    void mutate_prefix(std::string const& prefix) {
+        prefix_ = prefix;
+    }
+    virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr) {
+
+        auto candidate = ptr->Clone(shared_from_this());
+
+        auto key = std::make_tuple(
+            candidate->NameInvariantOfChildren(),
+            candidate->Children()
+        );
+
+        auto iter = ops_.find(key);
+        if (iter != ops_.end())
+            return iter->second;
+
+        if (
+            candidate->Kind() != OPKind_EndgenousSymbol &&
+#if 0
+            candidate->Kind() != OPKind_ExogenousSymbol &&
+#endif
+            candidate->Kind() != OPKind_Constant)
+        {
+
+            std::stringstream ss;
+            ss << prefix_ << (ops_.size() + 1);
+            auto endogous_sym = EndgenousSymbol::Make(ss.str(), candidate);
+
+            ops_[key] = endogous_sym;
+            return endogous_sym;
+        }
+        else {
+            ops_[key] = candidate;
+            return candidate;
+        }
+    }
+private:
+    std::string prefix_;
+    std::map<
+        std::tuple<
+        std::string,
+        std::vector<std::shared_ptr<Operator> >
+        >,
+        std::shared_ptr<Operator>
+    > ops_;
 };
 
 } // end namespace Transform

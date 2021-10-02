@@ -147,6 +147,9 @@
     <ClInclude Include="..\..\..\include\Cady\Cady.h" />
     <ClInclude Include="..\..\..\include\Cady\CodeGen.h" />
     <ClInclude Include="..\..\..\include\Cady\Frontend.h" />
+    <ClInclude Include="..\..\..\include\Cady\ImpliedMatrixFunction.h" />
+    <ClInclude Include="..\..\..\include\Cady\Instruction.h" />
+    <ClInclude Include="..\..\..\include\Cady\SymbolicMatrix.h" />
     <ClInclude Include="..\..\..\include\Cady\Transform.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
