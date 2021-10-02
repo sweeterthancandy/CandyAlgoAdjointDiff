@@ -81,15 +81,80 @@ private:
 };
 
 
+struct SymbolicMatrix
+{
+    SymbolicMatrix(
+        std::vector<std::vector<std::shared_ptr<Operator> > > const& matrix)
+    {
+        cols_ = matrix.front().size();
+        rows_ = matrix.size();
+        matrix_ = matrix;
+    }
+    std::shared_ptr<SymbolicMatrix> Multiply(SymbolicMatrix const& that)
+    {
+        /*
+        when we multiply a nxp and a pxq matrix, we get a n x q
+        */
+        if (cols_ != that.rows_)
+        {
+            throw std::runtime_error("cna't multiple matricies");
+        }
+
+        size_t result_rows = rows_;
+        size_t p = cols_;
+        size_t result_cols = that.cols_;
+
+        std::vector<std::vector<std::shared_ptr<Operator> > > result;
+        for (size_t i = 0; i != result_rows; ++i)
+        {
+            result.emplace_back();
+            for (size_t j = 0; j != result_cols; ++j)
+            {
+                std::shared_ptr<Operator> head;
+                for (size_t k = 0; k != p; ++k)
+                {
+                    auto const& left = this->At(i, k);
+                    auto const& right = that.At(k, j);
+                    auto term = BinaryOperator::Mul(left, right);
+                    if (head)
+                    {
+                        head = BinaryOperator::Add(head, term);
+                    }
+                    else
+                    {
+                        head = term;
+                    }
+                    
+                    
+                }
+
+                Transform::FoldZero fold_zero;
+                result.back().push_back(fold_zero.Fold(head));
+            }
+        }
+        return std::make_shared< SymbolicMatrix>(result);
+
+    }
+    std::shared_ptr<Operator> const& At(size_t i, size_t j)const
+    {
+        return matrix_.at(i).at(j);
+    }
+
+    std::vector<std::vector<std::shared_ptr<Operator> > > const& get_impl()const { return matrix_;  }
+private:
+    size_t rows_;
+    size_t cols_;
+    std::vector<std::vector<std::shared_ptr<Operator> > > matrix_;
+};
 struct InstructionDeclareMatrix : Instruction {
-    InstructionDeclareMatrix(std::string const& name, std::vector<std::vector<std::shared_ptr<Operator> > > matrix)
+    InstructionDeclareMatrix(std::string const& name, std::shared_ptr<SymbolicMatrix> const& matrix)
         :Instruction{ Instr_VarDecl }
         , name_(name)
         , matrix_(matrix)
     {}
     virtual void EmitCode(std::ostream& out)const {
-        size_t rows = matrix_.size();
-        size_t cols = matrix_[0].size();
+        size_t rows = matrix_->get_impl().size();
+        size_t cols = matrix_->get_impl()[0].size();
         out << "    const Eigen::Matrix<double, " << rows << "," << cols << ">" << name_ << " {\n";
         for (size_t i = 0; i != rows; ++i)
         {
@@ -97,16 +162,19 @@ struct InstructionDeclareMatrix : Instruction {
             for (size_t j = 0; j != cols; ++j)
             {
                 out << (j == 0 ? "": ", ");
-                matrix_.at(i).at(j)->EmitCode(out);
+                matrix_->get_impl().at(i).at(j)->EmitCode(out);
             }
             out << "}\n";
         }
         out << "};\n";
     }
     std::string const& LValueName()const { return name_; }
+    std::shared_ptr<SymbolicMatrix> const& Matrix()const {
+        return matrix_;
+    }
 private:
     std::string name_;
-    std::vector<std::vector<std::shared_ptr<Operator> > > matrix_;
+    std::shared_ptr<SymbolicMatrix> matrix_;
 };
 
 
@@ -719,6 +787,10 @@ struct SimpleTest3 {
     };
 };
 
+
+
+
+
 struct ImpliedMatrixFunction
 {
     ImpliedMatrixFunction(
@@ -804,7 +876,6 @@ struct ImpliedMatrixFunction
 
        
 
-
         std::vector<std::vector<std::shared_ptr<Operator> > > matrix(n);
         if (is_terminal)
         {
@@ -834,7 +905,7 @@ struct ImpliedMatrixFunction
        
 
         std::string name = "adj_matrix_" + std::to_string(id_);
-        return std::make_shared<InstructionDeclareMatrix>(name, matrix);
+        return std::make_shared<InstructionDeclareMatrix>(name, std::make_shared< SymbolicMatrix>(matrix));
 
     }
 
@@ -845,6 +916,10 @@ private:
     std::vector<std::shared_ptr<Symbol> > args_;
     std::vector<std::shared_ptr<Operator> > diffs_;
 };
+
+
+
+
 
 
 
@@ -937,6 +1012,8 @@ void driver()
 
     AADIB->Add(std::make_shared<InstructionComment>(std::vector<std::string>{ "//////////////", "Starting AAD matrix", "//////////////", }));
     std::vector<std::string> matrix_lvalues;
+
+    std::vector<std::shared_ptr<SymbolicMatrix> > adj_matrix_list;
     for (size_t idx = matrix_func_list.size(); idx != 0; )
     {
         bool is_terminal = (idx == matrix_func_list.size());
@@ -945,9 +1022,21 @@ void driver()
         AADIB->Add(matrix_func_list[idx]->MakeComment());
 
         auto matrix_decl = matrix_func_list[idx]->MakeMatrix(alloc_map, is_terminal);
+
+        adj_matrix_list.push_back(matrix_decl->Matrix());
+
         matrix_lvalues.push_back(matrix_decl->LValueName());
         AADIB->Add(matrix_decl);
     }
+
+    // fold matrix list
+    std::shared_ptr<SymbolicMatrix> adj_matrix = adj_matrix_list[0];
+    for (size_t idx = 1; idx < adj_matrix_list.size(); ++idx)
+    {
+        adj_matrix = adj_matrix_list[idx]->Multiply(*adj_matrix);
+    }
+
+    AADIB->Add(std::make_shared < InstructionDeclareMatrix> ("DD", adj_matrix));
 
     std::string head = matrix_lvalues[0];
     for (size_t idx = 1; idx < matrix_lvalues.size(); ++idx)
@@ -1226,8 +1315,8 @@ double BlackScholesCallOptionTestBareMetal(double t, double T, double r, double 
     double const __symbol_15 = ((__symbol_14) / (2.000000));
 
     // Matrix function F_14 => __symbol_16
-    //     __symbol_15 => 1.000000
     //     __symbol_4 => 1.000000
+    //     __symbol_15 => 1.000000
 
     double const __symbol_16 = ((__symbol_4)+(__symbol_15));
 
@@ -1238,14 +1327,14 @@ double BlackScholesCallOptionTestBareMetal(double t, double T, double r, double 
     double const __symbol_17 = ((__symbol_16) * (__symbol_3));
 
     // Matrix function F_16 => __symbol_21
-    //     __symbol_17 => 1.000000
     //     __symbol_20 => 1.000000
+    //     __symbol_17 => 1.000000
 
     double const __symbol_21 = ((__symbol_20)+(__symbol_17));
 
     // Matrix function F_17 => __symbol_27
-    //     __symbol_26 => __symbol_21
     //     __symbol_21 => __symbol_26
+    //     __symbol_26 => __symbol_21
 
     double const __symbol_27 = ((__symbol_26) * (__symbol_21));
 
@@ -1470,7 +1559,8 @@ double BlackScholesCallOptionTestBareMetal(double t, double T, double r, double 
     //     __symbol_9 => 1.000000
 
     const Eigen::Matrix<double, 35, 36>adj_matrix_29{
-{1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
+{1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
+, {0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
 , {0.000000, 0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
 , {0.000000, 0.000000, 0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
 , {0.000000, 0.000000, 0.000000, 0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
@@ -1897,11 +1987,12 @@ double BlackScholesCallOptionTestBareMetal(double t, double T, double r, double 
     };
 
     // Matrix function F_17 => __symbol_27
-    //     __symbol_26 => __symbol_21
     //     __symbol_21 => __symbol_26
+    //     __symbol_26 => __symbol_21
 
     const Eigen::Matrix<double, 23, 24>adj_matrix_17{
-{1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}, {0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
+{1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
+, {0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
 , {0.000000, 0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
 , {0.000000, 0.000000, 0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
 , {0.000000, 0.000000, 0.000000, 0.000000, 1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
@@ -1926,8 +2017,8 @@ double BlackScholesCallOptionTestBareMetal(double t, double T, double r, double 
     };
 
     // Matrix function F_16 => __symbol_21
-    //     __symbol_17 => 1.000000
     //     __symbol_20 => 1.000000
+    //     __symbol_17 => 1.000000
 
     const Eigen::Matrix<double, 22, 23>adj_matrix_16{
 {1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
@@ -1983,8 +2074,8 @@ double BlackScholesCallOptionTestBareMetal(double t, double T, double r, double 
     };
 
     // Matrix function F_14 => __symbol_16
-    //     __symbol_15 => 1.000000
     //     __symbol_4 => 1.000000
+    //     __symbol_15 => 1.000000
 
     const Eigen::Matrix<double, 20, 21>adj_matrix_14{
 {1.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 0.000000}
@@ -2271,21 +2362,28 @@ double BlackScholesCallOptionTestBareMetal(double t, double T, double r, double 
 , {0.000000, 0.000000, 0.000000, 0.000000, 0.000000, 1.000000, 1.000000}
     };
 
+    const Eigen::Matrix<double, 6, 1>DD{
+{((-1.000000) * (((((((((__symbol_5) * (((std::exp(__symbol_6)) * (((__symbol_8) * (((__symbol_31) * (-1.000000))))))))) + (((__symbol_11) * (((-1.000000) * (((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))))))))) + (((__symbol_16) * (((__symbol_26) * (((((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))) + (((((std::exp((-(((0.500000) * (std::pow(__statement_0, 2.000000))))))) / (2.506628))) * (__symbol_18))))))))))) + (((((0.500000) * (std::pow(__symbol_3, -0.500000)))) * (((__symbol_11) * (((((-1.000000) / (std::pow(__symbol_24, 2.000000)))) * (((__symbol_21) * (((((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))) + (((((std::exp((-(((0.500000) * (std::pow(__statement_0, 2.000000))))))) / (2.506628))) * (__symbol_18))))))))))))))))}
+, {((((((((__symbol_5) * (((std::exp(__symbol_6)) * (((__symbol_8) * (((__symbol_31) * (-1.000000))))))))) + (((__symbol_11) * (((-1.000000) * (((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))))))))) + (((__symbol_16) * (((__symbol_26) * (((((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))) + (((((std::exp((-(((0.500000) * (std::pow(__statement_0, 2.000000))))))) / (2.506628))) * (__symbol_18))))))))))) + (((((0.500000) * (std::pow(__symbol_3, -0.500000)))) * (((__symbol_11) * (((((-1.000000) / (std::pow(__symbol_24, 2.000000)))) * (((__symbol_21) * (((((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))) + (((((std::exp((-(((0.500000) * (std::pow(__statement_0, 2.000000))))))) / (2.506628))) * (__symbol_18))))))))))))))}
+, {(((((-(1.000000))) * (((__symbol_3) * (((std::exp(__symbol_6)) * (((__symbol_8) * (((__symbol_31) * (-1.000000))))))))))) + (((__symbol_3) * (((__symbol_26) * (((((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))) + (((((std::exp((-(((0.500000) * (std::pow(__statement_0, 2.000000))))))) / (2.506628))) * (__symbol_18))))))))))}
+, {((__symbol_33)+(((((__symbol_8) / (std::pow(__symbol_8, 2.000000)))) * (((((1.000000) / (__symbol_19))) * (((__symbol_26) * (((((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))) + (((((std::exp((-(((0.500000) * (std::pow(__statement_0, 2.000000))))))) / (2.506628))) * (__symbol_18))))))))))))}
+, {((((__symbol_7) * (((__symbol_31) * (-1.000000))))) + ((((((-(__symbol_18))) / (std::pow(__symbol_8, 2.000000)))) * (((((1.000000) / (__symbol_19))) * (((__symbol_26) * (((((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))) + (((((std::exp((-(((0.500000) * (std::pow(__statement_0, 2.000000))))))) / (2.506628))) * (__symbol_18))))))))))))}
+, {((((((__symbol_3) * (((-1.000000) * (((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))))))) + (((((2.000000) * (__symbol_11))) * (((((2.000000) / (4.000000))) * (((__symbol_3) * (((__symbol_26) * (((((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))) + (((((std::exp((-(((0.500000) * (std::pow(__statement_0, 2.000000))))))) / (2.506628))) * (__symbol_18))))))))))))))) + (((__symbol_23) * (((((-1.000000) / (std::pow(__symbol_24, 2.000000)))) * (((__symbol_21) * (((((((std::exp((-(((0.500000) * (std::pow(__statement_1, 2.000000))))))) / (2.506628))) * (((__statement_2) * (-1.000000))))) + (((((std::exp((-(((0.500000) * (std::pow(__statement_0, 2.000000))))))) / (2.506628))) * (__symbol_18))))))))))))}
+    };
+
     auto D = (adj_matrix_0 * (adj_matrix_1 * (adj_matrix_2 * (adj_matrix_3 * (adj_matrix_4 * (adj_matrix_5 * (adj_matrix_6 * (adj_matrix_7 * (adj_matrix_8 * (adj_matrix_9 * (adj_matrix_10 * (adj_matrix_11 * (adj_matrix_12 * (adj_matrix_13 * (adj_matrix_14 * (adj_matrix_15 * (adj_matrix_16 * (adj_matrix_17 * (adj_matrix_18 * (adj_matrix_19 * (adj_matrix_20 * (adj_matrix_21 * (adj_matrix_22 * (adj_matrix_23 * (adj_matrix_24 * (adj_matrix_25 * (adj_matrix_26 * (adj_matrix_27 * (adj_matrix_28 * (adj_matrix_29 * (adj_matrix_30 * (adj_matrix_31 * adj_matrix_32))))))))))))))))))))))))))))))));
 
-    if (d_t) { *d_t = D[0]; }
+    if (d_t) { *d_t = DD[0]; }
 
-    if (d_T) { *d_T = D[1]; }
+    if (d_T) { *d_T = DD[1]; }
 
-    if (d_r) { *d_r = D[2]; }
+    if (d_r) { *d_r = DD[2]; }
 
-    if (d_S) { *d_S = D[3]; }
+    if (d_S) { *d_S = DD[3]; }
 
-    if (d_K) { *d_K = D[4]; }
+    if (d_K) { *d_K = DD[4]; }
 
-    if (d_vol) { *d_vol = D[5]; }
-
-    std::cout << adj_matrix_31 * adj_matrix_32 << "\n";
+    if (d_vol) { *d_vol = DD[5]; }
 
     return __statement_3;
 
