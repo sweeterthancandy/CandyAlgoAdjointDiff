@@ -144,6 +144,7 @@
     <ClCompile Include="Cady.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\include\Cady\AADFunctionGenerator.h" />
     <ClInclude Include="..\..\..\include\Cady\Cady.h" />
     <ClInclude Include="..\..\..\include\Cady\CodeGen.h" />
     <ClInclude Include="..\..\..\include\Cady\Frontend.h" />
