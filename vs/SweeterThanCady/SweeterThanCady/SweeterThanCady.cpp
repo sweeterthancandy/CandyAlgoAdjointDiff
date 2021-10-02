@@ -120,6 +120,7 @@ struct BlackScholesCallOption {
             Double K,
             Double vol)const
         {
+#if 0
             using MathFunctions::Phi;
             using MathFunctions::Exp;
             using MathFunctions::Pow;
@@ -130,6 +131,27 @@ struct BlackScholesCallOption {
             Double pv = K * Exp(-r * (T - t));
             Double black = Phi(d1) * S - Phi(d2) * pv;
             return black;
+#endif
+            Double a0 = t * t;
+            Double a1 = T * T;
+            Double a2 = r * r;
+            Double a3 = S * S;
+            Double a4 = K * K;
+            Double a5 = vol * vol;
+
+            Double b0 = a0 * a1 + a2;
+            Double b1 = a1 * a2 + a3;
+            Double b2 = a2 * a3 + a4;
+            Double b3 = a3 * a4 + a5;
+            Double b4 = a4 * a5 + a0;
+
+            Double c1 = b0 * b1 + b3;
+            Double c2 = b1 * b2 + b3;
+
+            Double result = c2 * c1;
+
+            return result;
+            
         }
     };
 };
@@ -245,7 +267,7 @@ struct ProfileCodeGen {
         out << "    print_line(header);\n";
         out << "\n";
         out << "\n";
-        enum{ PrintCheck = 0 };
+        enum{ PrintCheck = 1 };
         if (PrintCheck)
         {
             out << "    std::vector<std::string> check;\n";
