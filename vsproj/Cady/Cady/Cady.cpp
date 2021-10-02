@@ -21,6 +21,8 @@ using namespace Cady;
 
 enum InstructionKind {
     Instr_VarDecl,
+    Instr_MatrixDecl,
+    Instr_Text,
     Instr_PointerAssignment,
     Instr_Return,
     Instr_Comment,
@@ -48,6 +50,17 @@ struct InstructionComment : Instruction {
 private:
     std::vector<std::string> text_;
 };
+struct InstructionText : Instruction {
+    InstructionText(std::string const& text)
+        :Instruction{ Instr_Text }
+        , text_{ text }
+    {}
+    virtual void EmitCode(std::ostream& out)const {
+        out << "    " << text_ << "\n";
+    }
+private:
+    std::string text_;
+};
 struct InstructionDeclareVariable : Instruction {
     InstructionDeclareVariable(std::string const& name, std::shared_ptr<Operator> op)
         :Instruction{ Instr_VarDecl }
@@ -65,6 +78,37 @@ private:
     std::string name_;
     std::shared_ptr<Operator> op_;
 };
+
+
+struct InstructionDeclareMatrix : Instruction {
+    InstructionDeclareMatrix(std::string const& name, std::vector<std::vector<std::shared_ptr<Operator> > > matrix)
+        :Instruction{ Instr_VarDecl }
+        , name_(name)
+        , matrix_(matrix)
+    {}
+    virtual void EmitCode(std::ostream& out)const {
+        size_t rows = matrix_.size();
+        size_t cols = matrix_[0].size();
+        out << "    const Eigen::Matrix<double, " << rows << "," << cols << ">" << name_ << " {\n";
+        for (size_t i = 0; i != rows; ++i)
+        {
+            out << (i == 0 ? "" : ", ") << "{";
+            for (size_t j = 0; j != cols; ++j)
+            {
+                out << (j == 0 ? "": ", ");
+                matrix_.at(i).at(j)->EmitCode(out);
+            }
+            out << "}\n";
+        }
+        out << "};\n";
+    }
+    std::string const& LValueName()const { return name_; }
+private:
+    std::string name_;
+    std::vector<std::vector<std::shared_ptr<Operator> > > matrix_;
+};
+
+
 struct InstructionPointerAssignment : Instruction {
     InstructionPointerAssignment(std::string const& name, std::string const& r_value)
         :Instruction{ Instr_PointerAssignment }
@@ -592,8 +636,136 @@ struct SimpleTest3 {
     };
 };
 
+struct ImpliedMatrixFunction
+{
+    ImpliedMatrixFunction(
+        size_t id,
+        std::string const& output,
+        std::vector<std::shared_ptr<Symbol> > const& args,
+        std::vector<std::shared_ptr<Operator> > const& diffs)
+        : id_{ id }
+        , output_{output}
+        , args_ {args }
+        , diffs_{ diffs }
+    {}
+    static std::shared_ptr< ImpliedMatrixFunction> Make(size_t id, std::shared_ptr<Instruction> const& instr)
+    {
+        if (auto decl_instr = std::dynamic_pointer_cast<InstructionDeclareVariable>(instr))
+        {
+            auto expr = decl_instr->as_operator_();
+            auto deps = expr->DepthFirstAnySymbolicDependencyOrThisNoRecurse();
+            std::vector<std::shared_ptr<Symbol> > input_sym(
+                deps.Set.begin(), deps.Set.end());
+            std::vector<std::shared_ptr<Operator> > diff_vec;
+            for (auto const& sym : input_sym) {
+                Transform::FoldZero fold_zero;
 
-int main()
+                auto diff = fold_zero.Fold(expr->Diff(sym->Name()));
+                diff_vec.push_back(diff);
+            }
+            return std::make_shared< ImpliedMatrixFunction>(id, decl_instr->LValueName(), input_sym, diff_vec);
+        }
+        throw std::runtime_error("not implemented");
+        
+    }
+    std::shared_ptr<InstructionComment> MakeComment()const
+    {
+        std::vector<std::string> comment_vec;
+
+        comment_vec.push_back("Matrix function F_" + std::to_string(id_) + " => " + output_);
+        for(size_t idx=0;idx!=args_.size();++idx)
+        {
+            std::stringstream ss;
+            ss << "    " << args_[idx]->Name() << " => ";
+            diffs_[idx]->EmitCode(ss);
+            std::string comment = ss.str();
+            if (comment.back() == '\n')
+            {
+                comment.pop_back();
+            }
+            comment_vec.push_back(comment);
+
+
+        }
+
+        return std::make_shared<InstructionComment>(comment_vec);
+    }
+
+    std::shared_ptr<InstructionDeclareMatrix> MakeMatrix(std::unordered_map<std::string,size_t> const& alloc, bool is_terminal)const
+    {
+        auto find_slot= [&](std::string const& name)
+        {
+            auto iter = alloc.find(name);
+            if (iter == alloc.end())
+            {
+                throw std::runtime_error("bad alloctedd slot");
+            }
+            return iter->second;
+        };
+
+        auto zero = Constant::Make(0.0);
+        auto one = Constant::Make(1.0);
+
+        size_t n = alloc.size();
+       
+        std::vector<std::shared_ptr<Operator> > diff_col(n, zero);
+        for (size_t idx = 0; idx != args_.size(); ++idx)
+        {
+            auto const& sym = args_[idx];
+            auto const& diff = diffs_[idx];
+
+            auto j = find_slot(sym->Name());
+
+            diff_col[j] = diff;
+        }
+
+       
+
+
+        std::vector<std::vector<std::shared_ptr<Operator> > > matrix(n);
+        if (is_terminal)
+        {
+            for (size_t idx = 0; idx != n; ++idx)
+            {
+                matrix[idx].push_back(diff_col[idx]);
+            }
+        }
+        else
+        {
+            for (auto& row : matrix)
+            {
+                row.resize(n + 1, zero);
+            }
+            // write identity matrix
+
+            for (size_t i = 0; i != n; ++i)
+            {
+                matrix[i][i] = one;
+            }
+
+            for (size_t idx = 0; idx != n; ++idx)
+            {
+                matrix[idx][n] = diff_col[idx];
+            }
+        }
+       
+
+        std::string name = "adj_matrix_" + std::to_string(id_);
+        return std::make_shared<InstructionDeclareMatrix>(name, matrix);
+
+    }
+
+
+private:
+    size_t id_;
+    std::string output_;
+    std::vector<std::shared_ptr<Symbol> > args_;
+    std::vector<std::shared_ptr<Operator> > diffs_;
+};
+
+
+
+int main__()
 {
     auto ad_kernel = SimpleTest0::Build<DoubleKernel>{};
 
@@ -629,10 +801,18 @@ int main()
 
     std::vector< std::shared_ptr<InstructionDeclareVariable> > decl_list;
 
+    std::vector<std::shared_ptr< ImpliedMatrixFunction >> matrix_func_list;
+
+    std::unordered_map<std::string, size_t> head_alloc_map = { {"x",0}, {"y",1} };
+    std::vector< std::unordered_map<std::string, size_t> > allocation_map_list{ head_alloc_map };
+
+    
+   
+
     for (auto const& instr : *IB)
     {
 
-        
+        auto alloc_map = allocation_map_list.back();
         
         if (auto decl_instr = std::dynamic_pointer_cast<InstructionDeclareVariable>(instr))
         {
@@ -643,6 +823,9 @@ int main()
             auto expr = decl_instr->as_operator_();
             auto deps = expr->DepthFirstAnySymbolicDependencyOrThisNoRecurse();
             size_t index = 0;
+
+            auto matrix_func = ImpliedMatrixFunction::Make(matrix_func_list.size(), instr);
+
             for (auto const& sym : deps.Set) {
                 std::stringstream ss;
                 ss << sym->Name() << " => ";
@@ -658,8 +841,14 @@ int main()
 
             }
 
+            alloc_map[decl_instr->LValueName()] = alloc_map.size();
+
             AADIB->Add(std::make_shared<InstructionComment>(comment_vec));
+            AADIB->Add(matrix_func->MakeComment());
             AADIB->Add(decl_instr);
+
+            matrix_func_list.push_back(matrix_func);
+            allocation_map_list.push_back(alloc_map);
 
             
         } 
@@ -671,54 +860,38 @@ int main()
 
     }
 
-    
-
-    
-    AADIB->Add(std::make_shared<InstructionComment>(std::vector<std::string>{ "//////////////", "Starting AAD section", "//////////////", }));
-
-
-    std::vector<std::unordered_map<std::string, std::string> > reverse_add_device;
-    for (size_t idx = decl_list.size(); idx != 0; )
+    AADIB->Add(std::make_shared<InstructionComment>(std::vector<std::string>{ "//////////////", "Starting AAD matrix", "//////////////", }));
+    std::vector<std::string> matrix_lvalues;
+    for (size_t idx = matrix_func_list.size(); idx != 0; )
     {
+        bool is_terminal = (idx == matrix_func_list.size());
         --idx;
+        auto const& alloc_map = allocation_map_list[idx];
+        AADIB->Add(matrix_func_list[idx]->MakeComment());
 
-        AADIB->Add(std::make_shared<InstructionComment>(std::vector<std::string>{ "-------------" }));
-        
-        auto const& decl_instr = decl_list[idx];
-
-        auto expr = decl_instr->as_operator_();
-        auto deps = expr->DepthFirstAnySymbolicDependencyOrThisNoRecurse();
-
-        std::unordered_map<std::string, std::string> adj_name_mapping;
-        for (auto const& sym : deps.Set) {
-            Transform::FoldZero fold_zero;
-
-            auto diff = fold_zero.Fold(expr->Diff(sym->Name()));
-
-            std::stringstream diff_label;
-            diff_label << decl_instr->LValueName() << "_d_" << sym->Name();
-
-
-            AADIB->Add(std::make_shared< InstructionDeclareVariable>(diff_label.str(), diff));
-
-            adj_name_mapping[sym->Name()] = diff_label.str();
-
-
-
-        }
-        reverse_add_device.push_back(adj_name_mapping);
+        auto matrix_decl = matrix_func_list[idx]->MakeMatrix(alloc_map, is_terminal);
+        matrix_lvalues.push_back(matrix_decl->LValueName());
+        AADIB->Add(matrix_decl);
+    }
+    
+    std::string head = matrix_lvalues[0];
+    for (size_t idx = 1; idx < matrix_lvalues.size(); ++idx)
+    {
+        head = "(" + matrix_lvalues[idx] + "*" + head + ")";
     }
 
-    AADIB->Add(std::make_shared<InstructionComment>(std::vector<std::string>{ "//////////////", "Computing deriviaties", "//////////////", }));
+    AADIB->Add(std::make_shared< InstructionText>("auto D = " + head + ";"));
+
+    AADIB->Add(std::make_shared< InstructionText>("if( d_x) { *d_x = D[0]; }"));
+    AADIB->Add(std::make_shared< InstructionText>("if( d_y) { *d_y = D[1]; }"));
+    
 
 
-    unique->
-
-    std::cout << "double f(double x, double y){\n";
+    std::cout << "double f(double x, double y, double* d_x=nullptr, double* d_y = nullptr){\n";
     for (auto const& instr : *AADIB)
     {
         instr->EmitCode(std::cout);
-        std::cout << "\n\n";
+        std::cout << "\n";
     }
     std::cout << "}\n";
 
@@ -786,4 +959,174 @@ int main()
         }
     }
    
+}
+
+#include <Eigen/Dense>
+
+double f(double x, double y, double* d_x = nullptr, double* d_y = nullptr) {
+    // x => 1
+
+    // Matrix function F_0 => __symbol_4
+    //     x => 1
+
+    double const __symbol_4 = x;
+
+    // __symbol_4 => ((((1)*(__symbol_4)))+(((__symbol_4)*(1))))
+
+    // Matrix function F_1 => __symbol_5
+    //     __symbol_4 => ((__symbol_4)+(__symbol_4))
+
+    double const __symbol_5 = ((__symbol_4) * (__symbol_4));
+
+    // y => 1
+
+    // Matrix function F_2 => __symbol_1
+    //     y => 1
+
+    double const __symbol_1 = y;
+
+    // __symbol_1 => ((((1)*(__symbol_1)))+(((__symbol_1)*(1))))
+
+    // Matrix function F_3 => __symbol_2
+    //     __symbol_1 => ((__symbol_1)+(__symbol_1))
+
+    double const __symbol_2 = ((__symbol_1) * (__symbol_1));
+
+    // __symbol_2 => ((((1)*(__symbol_1)))+(((__symbol_2)*(0))))
+    // __symbol_1 => ((((0)*(__symbol_1)))+(((__symbol_2)*(1))))
+
+    // Matrix function F_4 => __symbol_3
+    //     __symbol_2 => __symbol_1
+    //     __symbol_1 => __symbol_2
+
+    double const __symbol_3 = ((__symbol_2) * (__symbol_1));
+
+    // __symbol_5 => ((1)+(0))
+    // __symbol_3 => ((0)+(1))
+
+    // Matrix function F_5 => __symbol_6
+    //     __symbol_5 => 1
+    //     __symbol_3 => 1
+
+    double const __symbol_6 = ((__symbol_5)+(__symbol_3));
+
+    // __symbol_6 => 1
+
+    // Matrix function F_6 => __statement_0
+    //     __symbol_6 => 1
+
+    double const __statement_0 = __symbol_6;
+
+    // //////////////
+    // Starting AAD matrix
+    // //////////////
+
+    // Matrix function F_6 => __statement_0
+    //     __symbol_6 => 1
+
+    const Eigen::Matrix<double, 8, 1>adj_matrix_6{
+{0}
+, {0}
+, {0}
+, {0}
+, {0}
+, {0}
+, {0}
+, {1}
+    };
+
+    // Matrix function F_5 => __symbol_6
+    //     __symbol_5 => 1
+    //     __symbol_3 => 1
+
+    const Eigen::Matrix<double, 7, 8>adj_matrix_5{
+{1, 0, 0, 0, 0, 0, 0, 0}
+, {0, 1, 0, 0, 0, 0, 0, 0}
+, {0, 0, 1, 0, 0, 0, 0, 0}
+, {0, 0, 0, 1, 0, 0, 0, 1}
+, {0, 0, 0, 0, 1, 0, 0, 0}
+, {0, 0, 0, 0, 0, 1, 0, 0}
+, {0, 0, 0, 0, 0, 0, 1, 1}
+    };
+
+    // Matrix function F_4 => __symbol_3
+    //     __symbol_2 => __symbol_1
+    //     __symbol_1 => __symbol_2
+
+    const Eigen::Matrix<double, 6, 7>adj_matrix_4{
+{1, 0, 0, 0, 0, 0, 0}
+, {0, 1, 0, 0, 0, 0, 0}
+, {0, 0, 1, 0, 0, 0, 0}
+, {0, 0, 0, 1, 0, 0, 0}
+, {0, 0, 0, 0, 1, 0, __symbol_2}
+, {0, 0, 0, 0, 0, 1, __symbol_1}
+    };
+
+    // Matrix function F_3 => __symbol_2
+    //     __symbol_1 => ((__symbol_1)+(__symbol_1))
+
+    const Eigen::Matrix<double, 5, 6>adj_matrix_3{
+{1, 0, 0, 0, 0, 0}
+, {0, 1, 0, 0, 0, 0}
+, {0, 0, 1, 0, 0, 0}
+, {0, 0, 0, 1, 0, 0}
+, {0, 0, 0, 0, 1, ((__symbol_1)+(__symbol_1))}
+    };
+
+    // Matrix function F_2 => __symbol_1
+    //     y => 1
+
+    const Eigen::Matrix<double, 4, 5>adj_matrix_2{
+{1, 0, 0, 0, 0}
+, {0, 1, 0, 0, 1}
+, {0, 0, 1, 0, 0}
+, {0, 0, 0, 1, 0}
+    };
+
+    // Matrix function F_1 => __symbol_5
+    //     __symbol_4 => ((__symbol_4)+(__symbol_4))
+
+    const Eigen::Matrix<double, 3, 4>adj_matrix_1{
+{1, 0, 0, 0}
+, {0, 1, 0, 0}
+, {0, 0, 1, ((__symbol_4)+(__symbol_4))}
+    };
+
+    // Matrix function F_0 => __symbol_4
+    //     x => 1
+
+    const Eigen::Matrix<double, 2, 3>adj_matrix_0{
+{1, 0, 1}
+, {0, 1, 0}
+    };
+
+    auto D = (adj_matrix_0 * (adj_matrix_1 * (adj_matrix_2 * (adj_matrix_3 * (adj_matrix_4 * (adj_matrix_5 * adj_matrix_6))))));
+
+    if (d_x) { *d_x = D[0]; }
+
+    if (d_y) { *d_y = D[1]; }
+
+    return __statement_0;
+
+}
+
+int main() {
+    double x = 2.2;
+    double y = 3.3;
+
+    double d_x = 0;
+    double d_y = 0;
+
+    std::cout << "f=" << f(x, y, &d_x, &d_y) << "\n";
+    std::cout << "d_x = " << d_x << "\n";
+    std::cout << "d_y = " << d_y << "\n";
+
+
+    if (true)
+    {
+        double e = 0.00001;
+        std::cout << "d_x=" << ((f(x + e, y) - f(x - e, y)) / 2 / e) << "\n";
+        std::cout << "d_y=" << ((f(x, y + e) - f(x, y - e)) / 2 / e) << "\n";
+    }
+    return 0;
 }
