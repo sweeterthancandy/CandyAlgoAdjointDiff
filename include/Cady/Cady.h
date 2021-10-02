@@ -168,14 +168,14 @@ struct Operator : std::enable_shared_from_this<Operator>{
                         Set.insert(ptr);
                         DepthFirst.push_back(ptr);
                 }
-                void Display()const{
-                        std::cout << "displing set\n";
+                void Display(std::ostream& out = std::cout)const{
+                    out << "displing set\n";
                         for(auto const& _ : Set ){
-                                std::reinterpret_pointer_cast<Operator>(_)->EmitCode(std::cout);
+                                std::reinterpret_pointer_cast<Operator>(_)->EmitCode(out);
                                 // std::cout << " => " << _ << " => " << _.get() << "\n";
-                                std::reinterpret_pointer_cast<Operator>(_)->Display();
+                                std::reinterpret_pointer_cast<Operator>(_)->Display(out);
                         }
-                        std::cout << "displing set done\n";
+                        out << "displing set done\n";
                 }
                 std::vector<std::shared_ptr<Symbol > >        DepthFirst;
                 std::unordered_set<std::shared_ptr<Symbol > > Set;
@@ -193,9 +193,29 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 }
                 return result;
         }
-        DependentsProfile DepthFirstAnySymbolicDependency(){
+        DependentsProfile DepthFirstAnySymbolicDependencyAndThisNoRecurse() {
+            DependentsProfile result;
+            CollectDepthFirstAnySymbolicDependency(result, false);
+            if (Kind() == OPKind_EndgenousSymbol || Kind() == OPKind_ExogenousSymbol) {
+                result.Add(std::reinterpret_pointer_cast<Symbol>(shared_from_this()));
+            }
+            return result;
+        }
+        DependentsProfile DepthFirstAnySymbolicDependencyOrThisNoRecurse() {
+            DependentsProfile result;
+            if (Kind() == OPKind_EndgenousSymbol || Kind() == OPKind_ExogenousSymbol) {
+                result.Add(std::reinterpret_pointer_cast<Symbol>(shared_from_this()));
+            }
+            else
+            {
+                CollectDepthFirstAnySymbolicDependency(result, false);
+            }
+            
+            return result;
+        }
+        DependentsProfile DepthFirstAnySymbolicDependency(bool recursive = true){
                 DependentsProfile result;
-                CollectDepthFirstAnySymbolicDependency(result, true);
+                CollectDepthFirstAnySymbolicDependency(result, recursive);
                 return result;
         }
         void CollectDepthFirstAnySymbolicDependency(DependentsProfile& mem, bool recursive){
