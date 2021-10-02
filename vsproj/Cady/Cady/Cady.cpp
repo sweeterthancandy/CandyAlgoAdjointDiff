@@ -60,6 +60,7 @@ struct InstructionDeclareVariable : Instruction {
         out << ";\n";
     }
     auto const& as_operator_()const { return op_; }
+    std::string const& LValueName()const { return name_;  }
 private:
     std::string name_;
     std::shared_ptr<Operator> op_;
@@ -610,6 +611,7 @@ int main()
     std::unordered_set<std::string> three_addr_seen;
 
     auto IB = std::make_shared<InstructionBlock>();
+    auto AADIB = std::make_shared<InstructionBlock>();
     auto deps = unique->DepthFirstAnySymbolicDependencyAndThis();
     for (auto head : deps.DepthFirst) {
         if (head->IsExo())
@@ -619,30 +621,102 @@ int main()
             IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
             three_addr_seen.insert(head->Name());
         }
+
     }
     IB->Add(std::make_shared< InstructionReturn>(deps.DepthFirst.back()->Name()));
 
     // IB->EmitCode(std::cout);
 
-    std::cout << "double f(double x, double y){\n";
+    std::vector< std::shared_ptr<InstructionDeclareVariable> > decl_list;
+
     for (auto const& instr : *IB)
     {
+
+        
         
         if (auto decl_instr = std::dynamic_pointer_cast<InstructionDeclareVariable>(instr))
         {
+            decl_list.push_back(decl_instr);
+
+            std::vector<std::string> comment_vec;
+
             auto expr = decl_instr->as_operator_();
-            std::cout << "    // showing dependencies\n";
             auto deps = expr->DepthFirstAnySymbolicDependencyOrThisNoRecurse();
             size_t index = 0;
             for (auto const& sym : deps.Set) {
                 std::stringstream ss;
+                ss << sym->Name() << " => ";
                 auto diff = expr->Diff(sym->Name());
                 diff->EmitCode(ss);
-                std::cout << "    //     " << sym->Name() << " => " << ss.str() << "\n";
+                std::string comment = ss.str();
+                if (comment.back() == '\n')
+                {
+                    comment.pop_back();
+                }
+                comment_vec.push_back(comment);
+
+
             }
-            std::cout << "\n";
+
+            AADIB->Add(std::make_shared<InstructionComment>(comment_vec));
+            AADIB->Add(decl_instr);
+
+            
+        } 
+        else
+        {
+            // default
+            AADIB->Add(instr);
         }
 
+    }
+
+    
+
+    
+    AADIB->Add(std::make_shared<InstructionComment>(std::vector<std::string>{ "//////////////", "Starting AAD section", "//////////////", }));
+
+
+    std::vector<std::unordered_map<std::string, std::string> > reverse_add_device;
+    for (size_t idx = decl_list.size(); idx != 0; )
+    {
+        --idx;
+
+        AADIB->Add(std::make_shared<InstructionComment>(std::vector<std::string>{ "-------------" }));
+        
+        auto const& decl_instr = decl_list[idx];
+
+        auto expr = decl_instr->as_operator_();
+        auto deps = expr->DepthFirstAnySymbolicDependencyOrThisNoRecurse();
+
+        std::unordered_map<std::string, std::string> adj_name_mapping;
+        for (auto const& sym : deps.Set) {
+            Transform::FoldZero fold_zero;
+
+            auto diff = fold_zero.Fold(expr->Diff(sym->Name()));
+
+            std::stringstream diff_label;
+            diff_label << decl_instr->LValueName() << "_d_" << sym->Name();
+
+
+            AADIB->Add(std::make_shared< InstructionDeclareVariable>(diff_label.str(), diff));
+
+            adj_name_mapping[sym->Name()] = diff_label.str();
+
+
+
+        }
+        reverse_add_device.push_back(adj_name_mapping);
+    }
+
+    AADIB->Add(std::make_shared<InstructionComment>(std::vector<std::string>{ "//////////////", "Computing deriviaties", "//////////////", }));
+
+
+    unique->
+
+    std::cout << "double f(double x, double y){\n";
+    for (auto const& instr : *AADIB)
+    {
         instr->EmitCode(std::cout);
         std::cout << "\n\n";
     }
@@ -711,4 +785,5 @@ int main()
             }
         }
     }
+   
 }
