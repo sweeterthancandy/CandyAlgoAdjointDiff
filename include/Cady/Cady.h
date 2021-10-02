@@ -17,16 +17,6 @@
 
 #include <boost/optional.hpp>
 
-namespace std{
-        template< class T, class U > 
-        std::shared_ptr<T> reinterpret_pointer_cast( const std::shared_ptr<U>& r ) noexcept
-        {
-                    auto p = reinterpret_cast<typename std::shared_ptr<T>::element_type*>(r.get());
-                        return std::shared_ptr<T>(r, p);
-        }
-} // end namespace std
-
-
 
 
 
@@ -182,7 +172,7 @@ struct Operator : std::enable_shared_from_this<Operator>{
                         std::cout << "displing set\n";
                         for(auto const& _ : Set ){
                                 std::reinterpret_pointer_cast<Operator>(_)->EmitCode(std::cout);
-                                std::cout << " => " << _ << " => " << _.get() << "\n";
+                                // std::cout << " => " << _ << " => " << _.get() << "\n";
                                 std::reinterpret_pointer_cast<Operator>(_)->Display();
                         }
                         std::cout << "displing set done\n";

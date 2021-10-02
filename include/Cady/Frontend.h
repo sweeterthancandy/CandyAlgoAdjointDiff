@@ -29,7 +29,7 @@ namespace Frontend{
 
                 template<
                         class T,
-                        class = std::__void_t<
+                        class = std::void_t<
                                 typename std::enable_if<
                                         std::is_same<const char*, typename std::decay<T>::type>::value ||
                                         std::is_same<char*      , typename std::decay<T>::type>::value ||
@@ -42,7 +42,7 @@ namespace Frontend{
                 }
                 template<
                         class T,
-                        class = std::__void_t<
+                        class = std::void_t<
                                 typename std::enable_if<
                                         std::is_floating_point<typename std::decay<T>::type>::value ||
                                         std::is_integral<typename std::decay<T>::type>::value
@@ -54,21 +54,21 @@ namespace Frontend{
                 }
                 template<
                         class T,
-                        class = std::__void_t<decltype(std::declval<T>()->as_operator_())>
+                        class = std::void_t<decltype(std::declval<T>()->as_operator_())>
                 >
                 std::shared_ptr<Operator> AsOperatorImpl(T&& t, PrecedenceDevice<9>&&){
                         return t->as_operator_();
                 }
                 template<
                         class T,
-                        class = std::__void_t<decltype(std::declval<T>().as_operator_())>
+                        class = std::void_t<decltype(std::declval<T>().as_operator_())>
                 >
                 std::shared_ptr<Operator> AsOperatorImpl(T&& t, PrecedenceDevice<10>&&){
                         return t.as_operator_();
                 }
                 template<
                         class T,
-                        class = std::__void_t<
+                        class = std::void_t<
                                 typename std::enable_if<
                                         std::is_same<
                                                 std::shared_ptr<Operator>,
@@ -95,7 +95,7 @@ namespace Frontend{
         template<                                                        \
                 class L,                                                 \
                 class R,                                                 \
-                class = std::__void_t<                                   \
+                class = std::void_t<                                   \
                         decltype( AsOperator(std::declval<L>()) ),       \
                         decltype( AsOperator(std::declval<R>()) )        \
                 >                                                        \
@@ -116,7 +116,7 @@ namespace Frontend{
 
         template<
                 class Arg,
-                class = std::__void_t<
+                class = std::void_t<
                         decltype( AsOperator(std::declval<Arg>()) )
                 >
         >
