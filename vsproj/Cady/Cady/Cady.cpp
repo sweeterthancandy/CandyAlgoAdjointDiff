@@ -117,7 +117,19 @@ void driver()
     three_addr_func->SetFunctionName("BlackScholesThreeAddress");
     writer.Emit(out, three_addr_func);
 
+
+    using fwd_generater_ty = ForwardDiffFunctionGenerator<kernel_ty>;
+    fwd_generater_ty fwd_generater;
+    std::shared_ptr<Function> fwd_func = fwd_generater.GenerateInstructionBlock();
+    fwd_func->SetFunctionName("BlackScholesThreeAddressFwd");
+    writer.Emit(out, fwd_func);
+
     using aad_generater_ty = AADFunctionGenerator<kernel_ty>;
+    aad_generater_ty aad_generator_fwd(false);
+    std::shared_ptr<Function> aad_fwd_func = aad_generator_fwd.GenerateInstructionBlock();
+    aad_fwd_func->SetFunctionName("BlackScholesThreeAddressAADFwd");
+    writer.Emit(out, aad_fwd_func);
+
     aad_generater_ty aad_generator;
     std::shared_ptr<Function> aad_func = aad_generator.GenerateInstructionBlock();
     aad_func->SetFunctionName("BlackScholesThreeAddressAAD");
@@ -132,6 +144,7 @@ void driver()
 #include <chrono>
 #include <string>
 
+#if 1
 struct cpu_timer {
     cpu_timer()
         : start_{ std::chrono::high_resolution_clock::now() }
@@ -156,6 +169,28 @@ double BlackScholesThreeAddressAADNoDiff(double t, double T, double r, double S,
     double d_vol = 0.0;
     return BlackScholesThreeAddressAAD(t, T, r, S, K, vol, &d_t, &d_T, &d_r, &d_S, &d_K, &d_vol);
 }
+
+double BlackScholesThreeAddressAADFwdNoDiff(double t, double T, double r, double S, double K, double vol)
+{
+    double d_t = 0.0;
+    double d_T = 0.0;
+    double d_r = 0.0;
+    double d_S = 0.0;
+    double d_K = 0.0;
+    double d_vol = 0.0;
+    return BlackScholesThreeAddressAADFwd(t, T, r, S, K, vol, &d_t, &d_T, &d_r, &d_S, &d_K, &d_vol);
+}
+double BlackScholesThreeAddressFwdNodiff(double t, double T, double r, double S, double K, double vol)
+{
+    double d_t = 0.0;
+    double d_T = 0.0;
+    double d_r = 0.0;
+    double d_S = 0.0;
+    double d_K = 0.0;
+    double d_vol = 0.0;
+    return BlackScholesThreeAddressFwd(t, T, r, S, K, vol, &d_t, &d_T, &d_r, &d_S, &d_K, &d_vol);
+}
+
 double BlackScholesProto(double t, double T, double r, double S, double K, double vol)
 {
     return BlackScholesCallOptionTest::Build<double>{}.Evaluate(t, T, r, S, K, vol);
@@ -172,6 +207,8 @@ void test_bs() {
         {"BlackScholesSimple",BlackScholesSimple},
         { "BlackScholesSingleExpr",BlackScholesSingleExpr },
         { "BlackScholesThreeAddress",BlackScholesThreeAddress },
+        { "BlackScholesThreeAddressFwd",BlackScholesThreeAddressFwdNodiff },
+        { "BlackScholesThreeAddressAADFwd",BlackScholesThreeAddressAADFwdNoDiff },
         { "BlackScholesThreeAddressAAD",BlackScholesThreeAddressAADNoDiff },
     };
 
@@ -190,41 +227,59 @@ void test_bs() {
     }
 
 
+    using diff_func_ptr_ty = double(*)(double, double, double, double, double, double, double*, double*, double*, double*, double*, double*);
+    std::vector<
+        std::pair<std::string, diff_func_ptr_ty>
+    > diff_bs_world = {
+          { "BlackScholesThreeAddressFwd",BlackScholesThreeAddressFwd},
+          { "BlackScholesThreeAddressAADFwd",BlackScholesThreeAddressAADFwd},
+        { "BlackScholesThreeAddressAAD",BlackScholesThreeAddressAAD},
+    };
 
-    double d_t = 0.0;
-    double d_T = 0.0;
-    double d_r = 0.0;
-    double d_S = 0.0;
-    double d_K = 0.0;
-    double d_vol = 0.0;
-
-    double e = 1e-10;
-    
-    BlackScholesThreeAddressAAD(
-        t, T, r, S, K, vol,
-        &d_t, &d_T, &d_r, &d_S, &d_K, &d_vol);
-    std::vector<double> aad_d_list{ d_t,d_T,d_r,d_S,d_K,d_vol };
-
-
-    auto k = BlackScholesCallOptionTest::Build<double>{};
-
-    std::vector<double> args{ t,T,r,S,K,vol };
-    for (size_t idx = 0; idx != args.size(); ++idx)
+    for (auto const& p : diff_bs_world)
     {
-        auto up = args;
-        up[idx] += e;
-        auto down = args;
-        down[idx] -= e;
+        auto name = p.first;
+        auto ptr = p.second;
 
-        auto d = (k.EvaluateVec(up) - k.EvaluateVec(down)) / 2 / e;
-        auto aad_d = aad_d_list[idx];
+        double d_t = 0.0;
+        double d_T = 0.0;
+        double d_r = 0.0;
+        double d_S = 0.0;
+        double d_K = 0.0;
+        double d_vol = 0.0;
 
-        std::cout << "numeric=" << d << ", aad=" << aad_d << "\n";
+        double e = 1e-10;
 
+        ptr(
+            t, T, r, S, K, vol,
+            &d_t, &d_T, &d_r, &d_S, &d_K, &d_vol);
+        std::vector<double> aad_d_list{ d_t,d_T,d_r,d_S,d_K,d_vol };
+
+        auto k = BlackScholesCallOptionTest::Build<double>{};
+
+        std::vector<double> args{ t,T,r,S,K,vol };
+        for (size_t idx = 0; idx != args.size(); ++idx)
+        {
+            auto up = args;
+            up[idx] += e;
+            auto down = args;
+            down[idx] -= e;
+
+            auto d = (k.EvaluateVec(up) - k.EvaluateVec(down)) / 2 / e;
+            auto d_from_func = aad_d_list[idx];
+
+            auto diff = d_from_func - d;
+            std::cout << "numeric=" << d << ", " << name << "=" << d_from_func << ", diff=" << diff << "\n";
+
+        }
     }
 
 
-    size_t num_evals = 1000000;
+
+    
+
+
+    size_t num_evals = 10000000;
     for (auto const& p : bs_world)
     {
         auto name = p.first;
@@ -235,94 +290,13 @@ void test_bs() {
         std::cout << std::setw(30) << name << " => " << timer.count() << "\n";
     }
 
-#if 0
-    double t       = 0.0;
-    double T       = 2.0;
-    double r       = 0.00;
-    double S       = 200;
-    double K       = 200;
-    double vol     = 0.2;
-
-    double d_t = 0.0;
-    double d_T = 0.0;
-    double d_r = 0.0;
-    double d_S = 0.0;
-    double d_K = 0.0;
-    double d_vol = 0.0;
-
-    double e = 1e-10;
-    
-    std::vector<double> args{ t,T,r,S,K,vol };
-
-    auto k = BlackScholesCallOptionTest::Build<double>{};
-
-    auto from_proto = k.EvaluateVec(args);
-
-
-    auto from_fun = BlackScholesCallOptionTestBareMetal(
-        t, T, r, S, K, vol,
-        &d_t, &d_T, &d_r, &d_S, &d_K, &d_vol);
-
-    std::cout << "from_proto = " << from_proto << "\n";
-    std::cout << "from_fun = " << from_fun << "\n";
-
-    std::cout << "d_t = " << d_t << "\n";
-    std::cout << "d_T = " << d_T << "\n";
-    std::cout << "d_r = " << d_r << "\n";
-    std::cout << "d_S = " << d_S << "\n";
-    std::cout << "d_K = " << d_K << "\n";
-    std::cout << "d_vol = " << d_vol << "\n";
-
-    for (size_t idx = 0; idx != args.size(); ++idx)
-    {
-        auto up = args;
-        up[idx] += e;
-        auto down = args;
-        down[idx] -= e;
-
-        auto d = (k.EvaluateVec(up) - k.EvaluateVec(down)) / 2 / e;
-
-       
-        auto d2 = (k.Invoke(BlackScholesCallOptionTestBareMetalNoDiff,up) - k.Invoke(BlackScholesCallOptionTestBareMetalNoDiff, down)) / 2 / e;
-        std::cout << "idx => " << d << ", " << d2 << "\n";
-    }
-
-    for (volatile size_t N = 1000; N < 1000000; N *= 2)
-    {
-        std::cout << "N = " << N << "\n";
-        cpu_timer analytic_timer;
-        for (volatile size_t idx = 0; idx != N; ++idx)
-            auto from_proto = k.EvaluateVec(args);
-            //BlackScholesCallOptionTestBareMetalNOADD(t, T, r, S, K, vol);
-        std::cout << "    analytic took " << analytic_timer.format() << "\n";
-
-        auto analytic_count = analytic_timer.count();
-        
-        cpu_timer aad_timer;
-        for (volatile size_t idx = 0; idx != N; ++idx)
-            auto from_fun = BlackScholesCallOptionTestBareMetal(
-                t, T, r, S, K, vol,
-                &d_t, &d_T, &d_r, &d_S, &d_K, &d_vol);
-        auto aad_count = aad_timer.count();
-        std::cout << "    AAD took " << aad_timer.format() << "\n";
-        std::cout << "    ratio = " << double(aad_count) / analytic_count << "\n";
-
-    }
-#endif
 }
+#endif
 
 int main()
 {
-    enum{ RunDriver = 0};
-    if( RunDriver )
-    {
-        driver();
-    }
-    else
-    {
-        test_bs();
-        // run_it();
-    }
+    driver();
+    test_bs();
     
     
 

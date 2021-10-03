@@ -194,11 +194,134 @@ namespace Cady {
     };
 
 
+    template<class Kernel>
+    class ForwardDiffFunctionGenerator
+    {
+    public:
+        std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
+        {
+            // First we evaulate the function, in order to get an expression treee
+            auto ad_kernel = Kernel::template Build<DoubleKernel>();
+
+            auto arguments = ad_kernel.Arguments();
+
+            std::vector<DoubleKernel> symbolc_arguments;
+            for (auto const& arg : arguments)
+            {
+                symbolc_arguments.push_back(DoubleKernel::BuildFromExo(arg));
+            }
+            auto function_root = ad_kernel.EvaluateVec(symbolc_arguments);
+
+            struct RemoveEndo : OperatorTransform {
+                virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr) {
+                    auto candidate = ptr->Clone(shared_from_this());
+                    if (candidate->Kind() == OPKind_EndgenousSymbol) {
+                        if (auto typed = std::dynamic_pointer_cast<EndgenousSymbol>(candidate)) {
+                            return typed->Expr();
+                        }
+                    }
+                    return candidate;
+                }
+            };
+
+            auto expr = [&]()
+            {
+                auto ptr = function_root.as_operator_()->Clone(std::make_shared< RemoveEndo>());
+                if (auto sym = std::dynamic_pointer_cast<EndgenousSymbol>(ptr))
+                {
+                    return sym->Expr();
+                }
+                return ptr;
+            }();
+
+            std::vector<std::shared_ptr<Operator> > diff_list;
+            for (auto const& arg : arguments)
+            {
+                diff_list.push_back(expr->Diff(arg));
+            }
+
+            // maintain information about what symbol I've emitted
+            std::unordered_set<std::string> symbols_seen;
+
+            auto IB = std::make_shared<InstructionBlock>();
+
+
+            std::vector<std::shared_ptr<Operator> > all_exprs{ expr };
+            std::copy(diff_list.begin(), diff_list.end(), std::back_inserter(all_exprs));
+
+            std::vector<std::shared_ptr<Operator> > result_list;
+
+            auto three_address_transform = std::make_shared<Transform::RemapUnique>();
+
+            for (auto const& child_expr : all_exprs)
+            {
+                auto three_addr_child_expr = child_expr->Clone(three_address_transform);
+                auto deps = three_addr_child_expr->DepthFirstAnySymbolicDependencyAndThis();
+                for (auto head : deps.DepthFirst) {
+                    if (head->IsExo())
+                        continue;
+                    if (symbols_seen.count(head->Name()) != 0)
+                    {
+                        continue;
+                    }
+                    auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                    IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                    symbols_seen.insert(head->Name());
+
+                }
+                result_list.push_back(deps.DepthFirst.back());
+            }
+
+            for (size_t arg_index = 0; arg_index != arguments.size(); ++arg_index)
+            {
+                auto const& arg = arguments[arg_index];
+                std::string d_sym = "d_" + arg;
+                std::string aux_name = "result_" + d_sym;
+
+                auto result_sym = result_list[arg_index + 1];
+
+
+
+                
+                IB->Add(std::make_shared<InstructionDeclareVariable>(aux_name, result_sym));
+
+                std::stringstream ss;
+                ss << "if( " << d_sym << ") { *" << d_sym << " = " << aux_name << "; }";
+                IB->Add(std::make_shared< InstructionText>(ss.str()));
+
+            }
+
+            std::string result_name{ "result" };
+            IB->Add(std::make_shared<InstructionDeclareVariable>(result_name,result_list[0]));
+            IB->Add(std::make_shared< InstructionReturn>(result_name));
+
+            auto f = std::make_shared<Function>(IB);
+            f->SetFunctionName(ad_kernel.Name());
+            for (auto const& arg : arguments)
+            {
+                f->AddArg(std::make_shared<FunctionArgument>(FAK_Double, arg));
+            }
+            for (auto const& arg : arguments)
+            {
+                f->AddArg(std::make_shared<FunctionArgument>(FAK_OptDoublePtr, "d_" + arg));
+            }
+
+            return f;
+        };
+    };
+
+
 
     template<class Kernel>
     class AADFunctionGenerator
     {
+        
     public:
+        AADFunctionGenerator(bool backwards = true)
+        {
+            backwards_ = backwards;
+        }
+        bool backwards_;
         std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
         {
             // First we evaulate the function, in order to get an expression treee
@@ -304,12 +427,46 @@ namespace Cady {
 
             }
 
+
             // fold matrix list in reverse
-            std::shared_ptr<SymbolicMatrix> adj_matrix = adj_matrix_list[0];
-            for (size_t idx = 1; idx < adj_matrix_list.size(); ++idx)
+
+            auto fold_backwards = [&]()
             {
-                adj_matrix = adj_matrix_list[idx]->Multiply(*adj_matrix);
-            }
+                // (M1*(M2*M3))
+                std::shared_ptr<SymbolicMatrix> adj_matrix = adj_matrix_list[0];
+                for (size_t idx = 1; idx < adj_matrix_list.size(); ++idx)
+                {
+                    adj_matrix = adj_matrix_list[idx]->Multiply(*adj_matrix);
+                }
+                return adj_matrix;
+            };
+
+            auto fold_forewards = [&]()
+            {
+                auto rev_order = std::vector<std::shared_ptr<SymbolicMatrix> >(adj_matrix_list.rbegin(), adj_matrix_list.rend());
+
+                // (M1*M2)*M3)
+                std::shared_ptr<SymbolicMatrix> adj_matrix = rev_order[0];
+                for (size_t idx =1; idx <rev_order.size();++idx)
+                {
+                    adj_matrix = adj_matrix->Multiply(*rev_order[idx]);
+                }
+                
+                return adj_matrix;
+            };
+
+            auto adj_matrix = [&]()
+            {
+                if (backwards_)
+                {
+                    return fold_backwards();
+                }
+                else
+                {
+                    return fold_forewards();
+                }
+            }();
+
 
 
             // emit derivies
@@ -355,46 +512,6 @@ namespace Cady {
 
             return f;
         }
-#if 0
-        void EmitToString(std::ostream& ostr)const
-        {
-            auto ad_kernel = Function::template Build<DoubleKernel>();
-
-            auto AADIB = this->GenerateInstructionBlock();
-
-            auto arguments = ad_kernel.Arguments();
-
-            std::vector<std::string> arg_list;
-            for (size_t idx = 0; idx != arguments.size(); ++idx)
-            {
-                arg_list.push_back("double " + arguments[idx]);
-            }
-            for (size_t idx = 0; idx != arguments.size(); ++idx)
-            {
-                arg_list.push_back("double* d_" + arguments[idx] + " = nullptr");
-            }
-
-
-            ostr << "double " << ad_kernel.Name() << "(";
-            for (size_t idx = 0; idx != arg_list.size(); ++idx)
-            {
-                ostr << (idx == 0 ? "" : ", ") << arg_list[idx];
-            }
-            ostr << ")\n{\n";
-            for (auto const& instr : *AADIB)
-            {
-                instr->EmitCode(ostr);
-                ostr << "\n";
-            }
-            ostr << "}\n";
-        }
-        std::string GenerateString()const
-        {
-            std::stringstream ss;
-            this->EmitToString(ss);
-            return ss.str();
-        }
-#endif
 
     };
 
