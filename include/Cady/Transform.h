@@ -7,6 +7,10 @@
 namespace Cady{
 namespace Transform{
 
+/*
+   constant folding is top down, rather than bottom up like the ->Clone(ptr) methcinism
+   need to figure out best way to do this
+*/
 struct FoldZero{
 
         std::shared_ptr<Operator> Fold(std::shared_ptr<Operator> root){

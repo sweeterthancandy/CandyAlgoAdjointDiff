@@ -77,7 +77,7 @@ struct BlackScholesCallOptionTest {
         }
         std::vector<std::string> Arguments()const
         {
-            return { "t", "T", "r", "S", "K", "vol"};
+            return { "t", "T", "r", "S", "K", "vol" };
         }
         std::string Name()const
         {
@@ -107,7 +107,7 @@ void driver()
     CodeWriter writer;
 
     std::ofstream out("BlackGenerated.h");
-    
+
     writer.Emit(out, aad_func);
     writer.Emit(out, three_addr_func);
 }
@@ -134,12 +134,12 @@ struct cpu_timer {
 
 void test_bs() {
 #if 1
-    double t       = 0.0;
-    double T       = 2.0;
-    double r       = 0.00;
-    double S       = 200;
-    double K       = 200;
-    double vol     = 0.2;
+    double t = 0.0;
+    double T = 2.0;
+    double r = 0.00;
+    double S = 200;
+    double K = 200;
+    double vol = 0.2;
 
     double d_t = 0.0;
     double d_T = 0.0;
@@ -149,7 +149,7 @@ void test_bs() {
     double d_vol = 0.0;
 
     double e = 1e-10;
-    
+
     std::vector<double> args{ t,T,r,S,K,vol };
 
     auto k = BlackScholesCallOptionTest::Build<double>{};
@@ -180,8 +180,8 @@ void test_bs() {
 
         auto d = (k.EvaluateVec(up) - k.EvaluateVec(down)) / 2 / e;
 
-       
-        auto d2 = (k.Invoke(BlackScholesCallOptionTestBareMetalNoDiff,up) - k.Invoke(BlackScholesCallOptionTestBareMetalNoDiff, down)) / 2 / e;
+
+        auto d2 = (k.Invoke(BlackScholesCallOptionTestBareMetalNoDiff, up) - k.Invoke(BlackScholesCallOptionTestBareMetalNoDiff, down)) / 2 / e;
         std::cout << "idx => " << d << ", " << d2 << "\n";
     }
 
@@ -191,11 +191,11 @@ void test_bs() {
         cpu_timer analytic_timer;
         for (volatile size_t idx = 0; idx != N; ++idx)
             auto from_proto = k.EvaluateVec(args);
-            //BlackScholesCallOptionTestBareMetalNOADD(t, T, r, S, K, vol);
+        //BlackScholesCallOptionTestBareMetalNOADD(t, T, r, S, K, vol);
         std::cout << "    analytic took " << analytic_timer.format() << "\n";
 
         auto analytic_count = analytic_timer.count();
-        
+
         cpu_timer aad_timer;
         for (volatile size_t idx = 0; idx != N; ++idx)
             auto from_fun = BlackScholesCallOptionTestBareMetal(
@@ -211,8 +211,8 @@ void test_bs() {
 
 int main()
 {
-    enum{ RunDriver = 1};
-    if( RunDriver )
+    enum { RunDriver = 1 };
+    if (RunDriver)
     {
         driver();
     }
@@ -221,7 +221,7 @@ int main()
         test_bs();
         // run_it();
     }
-    
-    
+
+
 
 }
