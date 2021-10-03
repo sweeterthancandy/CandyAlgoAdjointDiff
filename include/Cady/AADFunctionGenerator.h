@@ -12,6 +12,127 @@ namespace Cady {
         bool matrix_function_comments{ true };
     };
 
+    
+
+    template<class Kernel>
+    class SimpleFunctionGenerator
+    {
+    public:
+        std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
+        {
+            // First we evaulate the function, in order to get an expression treee
+            auto ad_kernel = Kernel::template Build<DoubleKernel>();
+
+            auto arguments = ad_kernel.Arguments();
+
+            std::vector<DoubleKernel> symbolc_arguments;
+            for (auto const& arg : arguments)
+            {
+                symbolc_arguments.push_back(DoubleKernel::BuildFromExo(arg));
+            }
+            auto function_root = ad_kernel.EvaluateVec(symbolc_arguments);
+
+            auto expr = function_root.as_operator_();
+
+            // maintain information about what symbol I've emitted
+            std::unordered_set<std::string> symbols_seen;
+
+            auto IB = std::make_shared<InstructionBlock>();
+
+
+
+            auto deps = expr->DepthFirstAnySymbolicDependencyAndThis();
+            for (auto head : deps.DepthFirst) {
+                if (head->IsExo())
+                    continue;
+                if (symbols_seen.count(head->Name()) != 0)
+                {
+                    continue;
+                }
+                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                symbols_seen.insert(head->Name());
+
+            }
+            IB->Add(std::make_shared< InstructionReturn>(deps.DepthFirst.back()->Name()));
+
+            auto f = std::make_shared<Function>(IB);
+            for (auto const& arg : arguments)
+            {
+                f->AddArg(std::make_shared<FunctionArgument>(FAK_Double, arg));
+            }
+
+            return f;
+        };
+    };
+
+
+
+
+    template<class Kernel>
+    class SingleExprFunctionGenerator
+    {
+    public:
+        std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
+        {
+            // First we evaulate the function, in order to get an expression treee
+            auto ad_kernel = Kernel::template Build<DoubleKernel>();
+
+            auto arguments = ad_kernel.Arguments();
+
+            std::vector<DoubleKernel> symbolc_arguments;
+            for (auto const& arg : arguments)
+            {
+                symbolc_arguments.push_back(DoubleKernel::BuildFromExo(arg));
+            }
+            auto function_root = ad_kernel.EvaluateVec(symbolc_arguments);
+
+            struct RemoveEndo : OperatorTransform {
+                virtual std::shared_ptr<Operator> Apply(std::shared_ptr<Operator> const& ptr) {
+                    auto candidate = ptr->Clone(shared_from_this());
+                    if (candidate->Kind() == OPKind_EndgenousSymbol) {
+                        if (auto typed = std::dynamic_pointer_cast<EndgenousSymbol>(candidate)) {
+                            return typed->Expr();
+                        }
+                    }
+                    return candidate;
+                }
+            };
+
+            auto expr = function_root.as_operator_()->Clone(std::make_shared< RemoveEndo>());
+
+            // maintain information about what symbol I've emitted
+            std::unordered_set<std::string> symbols_seen;
+
+            auto IB = std::make_shared<InstructionBlock>();
+
+
+
+            auto deps = expr->DepthFirstAnySymbolicDependencyAndThis();
+            for (auto head : deps.DepthFirst) {
+                if (head->IsExo())
+                    continue;
+                if (symbols_seen.count(head->Name()) != 0)
+                {
+                    continue;
+                }
+                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                symbols_seen.insert(head->Name());
+
+            }
+            IB->Add(std::make_shared< InstructionReturn>(deps.DepthFirst.back()->Name()));
+
+            auto f = std::make_shared<Function>(IB);
+            for (auto const& arg : arguments)
+            {
+                f->AddArg(std::make_shared<FunctionArgument>(FAK_Double, arg));
+            }
+
+            return f;
+        };
+    };
+
 
     template<class Kernel>
     class ThreeAddressFunctionGenerator
