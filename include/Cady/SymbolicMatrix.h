@@ -39,10 +39,10 @@ namespace Cady {
                     {
                         auto const& left = this->At(i, k);
                         auto const& right = that.At(k, j);
-                        auto term = BinaryOperator::Mul(left, right);
+                        auto term = BinaryOperator::MulOpt(left, right);
                         if (head)
                         {
-                            head = BinaryOperator::Add(head, term);
+                            head = BinaryOperator::AddOpt(head, term);
                         }
                         else
                         {
@@ -52,8 +52,12 @@ namespace Cady {
 
                     }
 
-                    Transform::FoldZero fold_zero;
-                    result.back().push_back(fold_zero.Fold(head));
+#if 0
+                   Transform::FoldZero fold_zero;
+                   result.back().push_back(fold_zero.Fold(head));
+#else
+                   result.back().push_back(head);
+#endif
                 }
             }
             return std::make_shared< SymbolicMatrix>(result);

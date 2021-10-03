@@ -43,9 +43,6 @@ struct BlackScholesCallOptionTest {
             Double nd2 = Phi(d2);
             Double c = df * (F * nd1 - K * nd2);
 
-            return c;
-
-#if 0
 
             Double x0 = df * F * std;
             Double x1 = d * d1 * d2;
@@ -64,7 +61,6 @@ struct BlackScholesCallOptionTest {
             Double x12 = x11 / (x11 + 1);
 
             return x12;
-#endif
         }
         Double EvaluateVec(std::vector<Double> const& args)
         {
@@ -118,9 +114,7 @@ void driver()
 
     
 
-    CodeWriter writer;
-
-    std::ofstream out("BlackGenerated.h");
+    
 
     std::vector<
         std::pair<
@@ -140,6 +134,8 @@ void driver()
     ticker.emplace_back("BlackScholesThreeAddressAADFwd", std::make_shared<aad_generater_ty>(aad_generater_ty::AADPT_Forwards));
     ticker.emplace_back("BlackScholesThreeAddressAAD", std::make_shared<aad_generater_ty>(aad_generater_ty::AADPT_Backwards));
 
+    std::vector< std::shared_ptr<Function> > to_emit;
+
     for (auto const& p : ticker)
     {
         auto const& func_name = p.first;
@@ -148,8 +144,19 @@ void driver()
         auto func = generator->GenerateInstructionBlock();
         std::cout << std::setw(30) << func_name << " took " << timer.format() << "\n";
         func->SetFunctionName(func_name);
-        writer.Emit(out, func);
 
+        to_emit.push_back(func);
+        
+
+    }
+
+    
+    CodeWriter writer;
+
+    std::ofstream out("BlackGenerated.h");
+    for (auto const& func : to_emit)
+    {
+        writer.Emit(out, func);;
     }
 }
     
@@ -185,6 +192,7 @@ double BlackScholesThreeAddressAADFwdNoDiff(double t, double T, double r, double
     double d_vol = 0.0;
     return BlackScholesThreeAddressAADFwd(t, T, r, S, K, vol, &d_t, &d_T, &d_r, &d_S, &d_K, &d_vol);
 }
+#if 0
 double BlackScholesThreeAddressFwdNodiff(double t, double T, double r, double S, double K, double vol)
 {
     double d_t = 0.0;
@@ -195,6 +203,7 @@ double BlackScholesThreeAddressFwdNodiff(double t, double T, double r, double S,
     double d_vol = 0.0;
     return BlackScholesThreeAddressFwd(t, T, r, S, K, vol, &d_t, &d_T, &d_r, &d_S, &d_K, &d_vol);
 }
+#endif
 
 double BlackScholesProto(double t, double T, double r, double S, double K, double vol)
 {
@@ -292,7 +301,7 @@ void test_bs() {
         cpu_timer timer;
         for (volatile size_t idx = 0; idx != num_evals; ++idx)
             ptr(t, T, r, S, K, vol);
-        std::cout << std::setw(30) << name << " => " << timer.count() << "\n";
+        std::cout << std::setw(30) << name << " => " << timer.format() << "\n";
     }
 
 }
@@ -300,7 +309,7 @@ void test_bs() {
 
 int main()
 {
-    driver();
+    //driver();
     test_bs();
     
     

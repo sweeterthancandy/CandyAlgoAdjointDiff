@@ -13,7 +13,9 @@ namespace Cady {
             : start_{ std::chrono::high_resolution_clock::now() }
         {}
         std::string format()const {
-            return std::to_string(this->count());
+            double ms = static_cast<double>(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start_).count());
+            double seconds = ms / 1000.0;
+            return std::to_string(seconds) + " seconds";
         }
         long long count()const
         {

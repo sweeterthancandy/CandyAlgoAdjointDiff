@@ -393,6 +393,25 @@ private:
         double value_;
 };
 
+struct ConstantDescription {
+    ConstantDescription(std::shared_ptr<Operator> root) {
+        if (root->Kind() != OPKind_Constant)
+            return;
+        auto constant = static_cast<Constant*>(root.get());
+        opt_value_ = constant->Value();
+    }
+    bool IsZero()const { return opt_value_ && (*opt_value_ == 0.0 || *opt_value_ == -0.0); }
+    bool IsOne()const { return opt_value_ && *opt_value_ == 1.0; }
+    bool IsConstantValue()const { return !!opt_value_; }
+    double ValueOrThrow()const {
+        if (!opt_value_)
+            throw std::domain_error("have no value");
+        return opt_value_.get();
+    }
+private:
+    boost::optional<double> opt_value_;
+};
+
 enum SymbolKind{
         SymbolKind_Endo,
         SymbolKind_Exo,
@@ -779,6 +798,11 @@ struct BinaryOperator : Operator{
         {
                 return std::make_shared<BinaryOperator>(OP_ADD, left, right);
         }
+        static std::shared_ptr<Operator> AddOpt(std::shared_ptr<Operator> const& left,
+            std::shared_ptr<Operator> const& right)
+        {
+            return std::make_shared<BinaryOperator>(OP_ADD, left, right);
+        }
         static std::shared_ptr<Operator> Sub(std::shared_ptr<Operator> const& left,
                                              std::shared_ptr<Operator> const& right)
         {
@@ -788,6 +812,38 @@ struct BinaryOperator : Operator{
                                              std::shared_ptr<Operator> const& right)
         {
                 return std::make_shared<BinaryOperator>(OP_MUL, left, right);
+        }
+        static std::shared_ptr<Operator> MulOpt(std::shared_ptr<Operator> const& left,
+            std::shared_ptr<Operator> const& right)
+        {
+            // if the left is constant 1.0, just return the right
+            auto left_desc = ConstantDescription{ left };
+            if (left_desc.IsOne())
+            {
+                // 1 * x -> x
+                return right;
+            }
+            if (left_desc.IsZero())
+            {
+                // 0 * x -> 0
+                return left;
+            }
+
+
+            // if the right is constant 1.0, just return the left
+            auto right_desc = ConstantDescription{ right };
+            if (right_desc.IsOne())
+            {
+                // x * 1 -> x
+                return left;
+            }
+            if (right_desc.IsZero())
+            {
+                // x * 0 -> 0
+                return right;
+            }
+
+            return std::make_shared<BinaryOperator>(OP_MUL, left, right);
         }
         static std::shared_ptr<Operator> Div(std::shared_ptr<Operator> const& left,
                                              std::shared_ptr<Operator> const& right)
@@ -1018,24 +1074,7 @@ private:
 };
 #endif
 
-struct ConstantDescription{
-        ConstantDescription(std::shared_ptr<Operator> root){
-                if( root->Kind() != OPKind_Constant )
-                        return;
-                auto constant = static_cast<Constant*>(root.get());
-                opt_value_ = constant->Value();
-        }
-        bool IsZero()const{ return opt_value_ && (*opt_value_ == 0.0 || *opt_value_ == -0.0); }
-        bool IsOne()const{ return opt_value_ && *opt_value_ == 1.0; }
-        bool IsConstantValue()const{ return !! opt_value_; }
-        double ValueOrThrow()const{
-                if( ! opt_value_ )
-                        throw std::domain_error("have no value");
-                return opt_value_.get();
-        }
-private:
-        boost::optional<double> opt_value_;
-};
+
 
 
 inline void Operator::MutateToEndgenous(std::string const& name){
