@@ -134,6 +134,21 @@ struct FoldZero{
 };
 
 
+/*
+This function makes the expression tree three address code, ie
+
+        *
+      /    \
+    2      +
+          /  \
+        3      4
+
+
+goes to
+
+    tmp0 = 3 + 4
+    tmp1 = 2 * tmp0
+*/
 struct RemapUnique : OperatorTransform {
     explicit RemapUnique(std::string const& prefix = "__symbol_")
         : prefix_{ prefix }
