@@ -9,7 +9,7 @@
 #include "Cady/ImpliedMatrixFunction.h"
 #include "Cady/AADFunctionGenerator.h"
 #include "Cady/CodeWriter.h"
-
+#include "Cady/CpuTimer.h"
 
 #include <map>
 #include <functional>
@@ -42,7 +42,29 @@ struct BlackScholesCallOptionTest {
             Double nd1 = Phi(d1);
             Double nd2 = Phi(d2);
             Double c = df * (F * nd1 - K * nd2);
+
             return c;
+
+#if 0
+
+            Double x0 = df * F * std;
+            Double x1 = d * d1 * d2;
+            Double x2 = df * d1 * c;
+            Double x3 = c * nd1;
+            Double x4 = Log(x0) * F + Log(x3) * Log(x2);
+            Double x5 = c * x4 + x0;
+            Double x6 = x0 * df + x2;
+            Double x7 = x6 * c * nd2;
+            Double x8 = Log(x7) * x1 + x2;
+
+            // Double x9 = Log(x0) * Log(x1) * Log(x2) * Log(x3) * Log(x4) + Log(x5) * Log(x6) * Log(x7) * Log(x8);
+            Double x9 = Log(x8) * Log(x7) + x5;
+            Double x10 = x9 * (x0 + x1 + x2 + x7 * x8);
+            Double x11 = Log(x10 + 1);
+            Double x12 = x11 / (x11 + 1);
+
+            return x12;
+#endif
         }
         Double EvaluateVec(std::vector<Double> const& args)
         {
@@ -94,46 +116,41 @@ void driver()
     // first write no diff version
     using kernel_ty = BlackScholesCallOptionTest;
 
+    
+
     CodeWriter writer;
 
     std::ofstream out("BlackGenerated.h");
 
-    
-    using simple_generater_ty = SimpleFunctionGenerator<kernel_ty>;
-    simple_generater_ty simple_generater;
-    std::shared_ptr<Function> simple_func = simple_generater.GenerateInstructionBlock();
-    simple_func->SetFunctionName("BlackScholesSimple");
-    writer.Emit(out, simple_func);
-
-    using single_generater_ty = SingleExprFunctionGenerator<kernel_ty>;
-    single_generater_ty single_generater;
-    std::shared_ptr<Function> single_func = single_generater.GenerateInstructionBlock();
-    single_func->SetFunctionName("BlackScholesSingleExpr");
-    writer.Emit(out, single_func);
-
-    using three_addreess_generater_ty = ThreeAddressFunctionGenerator<kernel_ty>;
-    three_addreess_generater_ty three_addreess_generater;
-    std::shared_ptr<Function> three_addr_func = three_addreess_generater.GenerateInstructionBlock();
-    three_addr_func->SetFunctionName("BlackScholesThreeAddress");
-    writer.Emit(out, three_addr_func);
+    std::vector<
+        std::pair<
+        std::string,
+        std::shared_ptr< FunctionGenerator>
+        >
+    > ticker;
 
 
-    using fwd_generater_ty = ForwardDiffFunctionGenerator<kernel_ty>;
-    fwd_generater_ty fwd_generater;
-    std::shared_ptr<Function> fwd_func = fwd_generater.GenerateInstructionBlock();
-    fwd_func->SetFunctionName("BlackScholesThreeAddressFwd");
-    writer.Emit(out, fwd_func);
+
+    ticker.emplace_back("BlackScholesSimple", std::make_shared<SimpleFunctionGenerator<kernel_ty>>());
+    ticker.emplace_back("BlackScholesSingleExpr", std::make_shared< SingleExprFunctionGenerator<kernel_ty>>());
+    ticker.emplace_back("BlackScholesThreeAddress", std::make_shared< ThreeAddressFunctionGenerator<kernel_ty>>());
+    //ticker.emplace_back("BlackScholesThreeAddressFwd", std::make_shared< ForwardDiffFunctionGenerator<kernel_ty>>());
 
     using aad_generater_ty = AADFunctionGenerator<kernel_ty>;
-    aad_generater_ty aad_generator_fwd(false);
-    std::shared_ptr<Function> aad_fwd_func = aad_generator_fwd.GenerateInstructionBlock();
-    aad_fwd_func->SetFunctionName("BlackScholesThreeAddressAADFwd");
-    writer.Emit(out, aad_fwd_func);
+    ticker.emplace_back("BlackScholesThreeAddressAADFwd", std::make_shared<aad_generater_ty>(aad_generater_ty::AADPT_Forwards));
+    ticker.emplace_back("BlackScholesThreeAddressAAD", std::make_shared<aad_generater_ty>(aad_generater_ty::AADPT_Backwards));
 
-    aad_generater_ty aad_generator;
-    std::shared_ptr<Function> aad_func = aad_generator.GenerateInstructionBlock();
-    aad_func->SetFunctionName("BlackScholesThreeAddressAAD");
-    writer.Emit(out, aad_func);
+    for (auto const& p : ticker)
+    {
+        auto const& func_name = p.first;
+        auto const& generator = p.second;
+        cpu_timer timer;
+        auto func = generator->GenerateInstructionBlock();
+        std::cout << std::setw(30) << func_name << " took " << timer.format() << "\n";
+        func->SetFunctionName(func_name);
+        writer.Emit(out, func);
+
+    }
 }
     
    
@@ -145,19 +162,7 @@ void driver()
 #include <string>
 
 #if 1
-struct cpu_timer {
-    cpu_timer()
-        : start_{ std::chrono::high_resolution_clock::now() }
-    {}
-    std::string format()const {
-        return std::to_string(this->count());
-    }
-    long long count()const
-    {
-        return (std::chrono::high_resolution_clock::now() - start_).count();
-    }
-    std::chrono::time_point<std::chrono::high_resolution_clock> start_;
-};
+
 
 double BlackScholesThreeAddressAADNoDiff(double t, double T, double r, double S, double K, double vol)
 {
@@ -207,7 +212,7 @@ void test_bs() {
         {"BlackScholesSimple",BlackScholesSimple},
         { "BlackScholesSingleExpr",BlackScholesSingleExpr },
         { "BlackScholesThreeAddress",BlackScholesThreeAddress },
-        { "BlackScholesThreeAddressFwd",BlackScholesThreeAddressFwdNodiff },
+       // { "BlackScholesThreeAddressFwd",BlackScholesThreeAddressFwdNodiff },
         { "BlackScholesThreeAddressAADFwd",BlackScholesThreeAddressAADFwdNoDiff },
         { "BlackScholesThreeAddressAAD",BlackScholesThreeAddressAADNoDiff },
     };
@@ -231,7 +236,7 @@ void test_bs() {
     std::vector<
         std::pair<std::string, diff_func_ptr_ty>
     > diff_bs_world = {
-          { "BlackScholesThreeAddressFwd",BlackScholesThreeAddressFwd},
+          //{ "BlackScholesThreeAddressFwd",BlackScholesThreeAddressFwd},
           { "BlackScholesThreeAddressAADFwd",BlackScholesThreeAddressAADFwd},
         { "BlackScholesThreeAddressAAD",BlackScholesThreeAddressAAD},
     };

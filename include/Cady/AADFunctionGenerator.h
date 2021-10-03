@@ -12,10 +12,15 @@ namespace Cady {
         bool matrix_function_comments{ true };
     };
 
-    
+    class FunctionGenerator
+    {
+    public:
+        virtual ~FunctionGenerator() = default;
+        virtual std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const = 0;
+    };
 
     template<class Kernel>
-    class SimpleFunctionGenerator
+    class SimpleFunctionGenerator : public FunctionGenerator
     {
     public:
         std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
@@ -70,7 +75,7 @@ namespace Cady {
 
 
     template<class Kernel>
-    class SingleExprFunctionGenerator
+    class SingleExprFunctionGenerator : public FunctionGenerator
     {
     public:
         std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
@@ -135,7 +140,7 @@ namespace Cady {
 
 
     template<class Kernel>
-    class ThreeAddressFunctionGenerator
+    class ThreeAddressFunctionGenerator : public FunctionGenerator
     {
     public:
         std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
@@ -195,7 +200,7 @@ namespace Cady {
 
 
     template<class Kernel>
-    class ForwardDiffFunctionGenerator
+    class ForwardDiffFunctionGenerator : public FunctionGenerator
     {
     public:
         std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
@@ -313,15 +318,20 @@ namespace Cady {
 
 
     template<class Kernel>
-    class AADFunctionGenerator
+    class AADFunctionGenerator : public FunctionGenerator
     {
-        
     public:
-        AADFunctionGenerator(bool backwards = true)
+        enum AADPropogationType
         {
-            backwards_ = backwards;
+            AADPT_Forwards,
+            AADPT_Backwards,
+        };
+    
+        
+        AADFunctionGenerator(AADPropogationType propogation_type)
+        {
+            propogation_type_ = propogation_type;
         }
-        bool backwards_;
         std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
         {
             // First we evaulate the function, in order to get an expression treee
@@ -441,7 +451,7 @@ namespace Cady {
                 return adj_matrix;
             };
 
-            auto fold_forewards = [&]()
+            auto fold_forwards = [&]()
             {
                 auto rev_order = std::vector<std::shared_ptr<SymbolicMatrix> >(adj_matrix_list.rbegin(), adj_matrix_list.rend());
 
@@ -455,15 +465,19 @@ namespace Cady {
                 return adj_matrix;
             };
 
-            auto adj_matrix = [&]()
+            auto adj_matrix = [&]()-> std::shared_ptr<SymbolicMatrix>
             {
-                if (backwards_)
+                if (propogation_type_ == AADPT_Backwards)
                 {
                     return fold_backwards();
                 }
+                else if (propogation_type_ == AADPT_Forwards)
+                {
+                    return fold_forwards();
+                }
                 else
                 {
-                    return fold_forewards();
+                    return {};
                 }
             }();
 
@@ -512,7 +526,8 @@ namespace Cady {
 
             return f;
         }
-
+    private:
+        AADPropogationType propogation_type_;
     };
 
 

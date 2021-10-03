@@ -148,6 +148,7 @@
     <ClInclude Include="..\..\..\include\Cady\Cady.h" />
     <ClInclude Include="..\..\..\include\Cady\CodeGen.h" />
     <ClInclude Include="..\..\..\include\Cady\CodeWriter.h" />
+    <ClInclude Include="..\..\..\include\Cady\CpuTimer.h" />
     <ClInclude Include="..\..\..\include\Cady\Frontend.h" />
     <ClInclude Include="..\..\..\include\Cady\ImpliedMatrixFunction.h" />
     <ClInclude Include="..\..\..\include\Cady\Instruction.h" />
