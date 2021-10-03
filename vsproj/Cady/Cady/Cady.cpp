@@ -34,9 +34,25 @@ struct BlackScholesCallOptionTest {
             using MathFunctions::Log;
             using MathFunctions::Max;
             using MathFunctions::Min;
+            using MathFunctions::If;
 
 
-            return Max(S - K, 0.0);
+            return If(
+                t,
+                [&]() { return Max(S - K, 0.0); },
+                [&]()
+                {
+                    Double df = Exp(-r * T);
+                    Double F = S * Exp(r * T);
+                    Double std = vol * Pow(T, 0.5);
+                    Double d = Log(F / K) / std;
+                    Double d1 = d + 0.5 * std;
+                    Double d2 = d1 - std;
+                    Double nd1 = Phi(d1);
+                    Double nd2 = Phi(d2);
+                    Double c = df * (F * nd1 - K * nd2);
+                    return c;
+                });
 #if 0
             auto on_expiry = ( t == T );
             return If(on_expiry)
@@ -148,13 +164,13 @@ void driver()
 
 
     ticker.emplace_back("BlackScholesSimple", std::make_shared<SimpleFunctionGenerator<kernel_ty>>());
-    ticker.emplace_back("BlackScholesSingleExpr", std::make_shared< SingleExprFunctionGenerator<kernel_ty>>());
-    ticker.emplace_back("BlackScholesThreeAddress", std::make_shared< ThreeAddressFunctionGenerator<kernel_ty>>());
+    //ticker.emplace_back("BlackScholesSingleExpr", std::make_shared< SingleExprFunctionGenerator<kernel_ty>>());
+    //ticker.emplace_back("BlackScholesThreeAddress", std::make_shared< ThreeAddressFunctionGenerator<kernel_ty>>());
     //ticker.emplace_back("BlackScholesThreeAddressFwd", std::make_shared< ForwardDiffFunctionGenerator<kernel_ty>>());
 
-    using aad_generater_ty = AADFunctionGenerator<kernel_ty>;
-    ticker.emplace_back("BlackScholesThreeAddressAADFwd", std::make_shared<aad_generater_ty>(aad_generater_ty::AADPT_Forwards));
-    ticker.emplace_back("BlackScholesThreeAddressAAD", std::make_shared<aad_generater_ty>(aad_generater_ty::AADPT_Backwards));
+    //using aad_generater_ty = AADFunctionGenerator<kernel_ty>;
+    //ticker.emplace_back("BlackScholesThreeAddressAADFwd", std::make_shared<aad_generater_ty>(aad_generater_ty::AADPT_Forwards));
+    //ticker.emplace_back("BlackScholesThreeAddressAAD", std::make_shared<aad_generater_ty>(aad_generater_ty::AADPT_Backwards));
 
     std::vector< std::shared_ptr<Function> > to_emit;
 
@@ -190,7 +206,7 @@ void driver()
 #include <chrono>
 #include <string>
 
-#if 1
+#if 0
 
 
 double BlackScholesThreeAddressAADNoDiff(double t, double T, double r, double S, double K, double vol)
@@ -332,7 +348,7 @@ void test_bs() {
 int main()
 {
     driver();
-    test_bs();
+    //test_bs();
     
     
 

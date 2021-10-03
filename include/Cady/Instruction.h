@@ -121,13 +121,21 @@ namespace Cady {
         virtual void EmitCode(std::ostream& out)const {
             out << "    return " << name_ << ";\n";
         }
+        std::string const& VarName()const { return name_;  }
     private:
         std::string name_;
     };
 
+
+    struct ControlBlock
+    {
+        virtual ~ControlBlock() = default;
+        virtual void EmitCode(std::ostream& out)const = 0;
+    };
     
 
-    struct InstructionBlock : std::vector<std::shared_ptr<Instruction> > {
+    // instruction block has not branching
+    struct InstructionBlock : ControlBlock, std::vector<std::shared_ptr<Instruction> > {
         virtual ~InstructionBlock() = default;
         void Add(std::shared_ptr<Instruction> instr) {
             // quick hack for now
@@ -144,6 +152,46 @@ namespace Cady {
         virtual void EmitCode(std::ostream& out)const {
             for (auto const& ptr : *this) {
                 ptr->EmitCode(out);
+            }
+        }
+    };
+
+
+    struct IfBlock : ControlBlock
+    {
+        IfBlock(
+            std::string const& cond,
+            std::shared_ptr< ControlBlock> const& if_true,
+            std::shared_ptr< ControlBlock> const& if_false)
+            : cond_{ cond }, if_true_{ if_true }, if_false_{ if_false }
+        {}
+        std::string const& ConditionVariable()const { return cond_;  }
+        std::shared_ptr<ControlBlock> const& Iftrue()const { return if_true_;  }
+        std::shared_ptr<ControlBlock> const& IfFalse()const { return if_false_; }
+        void EmitCode(std::ostream& out)const
+        {
+            out << "    if( !! " << cond_ << " )\n";
+            out << "    {\n";
+            if_true_->EmitCode(out);
+            out << "    }\n";
+            out << "    else\n";
+            out << "    {\n";
+            if_false_->EmitCode(out);
+            out << "    }\n";
+        }
+    private:
+        std::string cond_;
+        std::shared_ptr<ControlBlock> if_true_;
+        std::shared_ptr<ControlBlock> if_false_;
+    };
+
+    struct Module : ControlBlock, std::vector<std::shared_ptr<ControlBlock> >
+    {
+        void EmitCode(std::ostream& out)const
+        {
+            for (auto const& x : *this)
+            {
+                x->EmitCode(out);
             }
         }
     };
@@ -173,8 +221,14 @@ namespace Cady {
     struct Function
     {
         explicit Function(
-            std::shared_ptr< InstructionBlock> const& ib)
-            :ib_{ ib } {}
+            std::shared_ptr<Module> const& modulee)
+            :module_{ modulee } {}
+        explicit Function(
+            std::shared_ptr<InstructionBlock> const& IB)
+        {
+            module_ = std::make_shared<Module>();
+            module_->push_back(IB);
+        }
         void AddArg(std::shared_ptr < FunctionArgument> const& arg)
         {
             args_.push_back(arg);
@@ -188,9 +242,9 @@ namespace Cady {
         std::string const& FunctionName()const {
             return func_name_;
         }
-        auto const& IB()const { return ib_; }
+        auto const& GetModule()const { return module_; }
     private:
-        std::shared_ptr< InstructionBlock> ib_;
+        std::shared_ptr<Module> module_;
         std::string func_name_{ "unnamed_function" };
         std::vector<std::shared_ptr< FunctionArgument> > args_;
     };

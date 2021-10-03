@@ -38,11 +38,9 @@ namespace Cady
                 ostr << (idx == 0 ? "" : ", ") << arg_list[idx];
             }
             ostr << ")\n{\n";
-            for (auto const& instr : *f->IB())
-            {
-                instr->EmitCode(ostr);
-                ostr << "\n";
-            }
+
+            auto module = f->GetModule();
+            module->EmitCode(ostr);
             ostr << "}\n";
         }
 #if 0

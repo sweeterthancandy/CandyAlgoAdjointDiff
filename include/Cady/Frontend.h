@@ -177,6 +177,23 @@ namespace Frontend{
             };
         }
 
+        template<
+            class Cond,
+            class IfTrue,
+            class IfFalse>
+        inline auto If(
+            Cond&& cond,
+            IfTrue&& if_true,
+            IfFalse&& if_false)
+        {
+            return WithOperators{
+                    If::Make(
+                        AsOperator(cond),
+                        AsOperator(if_true()),
+                        AsOperator(if_false()))
+            };
+        }
+
         template<class Arg>
         inline auto Stmt(std::string const& name, Arg&& arg){
                 auto ptr = std::make_shared<EndgenousSymbol>(name, AsOperator(arg));
@@ -278,6 +295,21 @@ namespace MathFunctions{
         inline double Max(double l, double r) {
             return std::max(l, r);
         }
+        template<class IfTrue, class IfFalse>
+        inline double If(
+            double cond,
+            IfTrue&& if_true,
+            IfFalse&& if_false)
+        {
+            if (!!cond)
+            {
+                return if_true();
+            }
+            else
+            {
+                return if_false();
+            }
+        }
 
         using Frontend::Phi;
         using Frontend::Exp;
@@ -285,6 +317,7 @@ namespace MathFunctions{
         using Frontend::Log;
         using Frontend::Min;
         using Frontend::Max;
+        using Frontend::If;
 
 } // end namespace MathFunctions
 } // end namespace Cady

@@ -24,6 +24,102 @@ namespace Cady {
     class SimpleFunctionGenerator : public FunctionGenerator
     {
     public:
+
+        std::shared_ptr<Module> BuildRecursive(std::shared_ptr<Operator> const& head)const
+        {
+            struct IfFinder
+            {
+                void operator()(std::shared_ptr<Operator> const& op)
+                {
+                    if (auto if_stmt = std::dynamic_pointer_cast<If>(op))
+                    {
+                        if_stmts_.push_back(if_stmt);
+                    }
+                }
+
+                std::vector<std::shared_ptr<If> > if_stmts_;
+            };
+
+            auto if_finder = std::make_shared< IfFinder>();
+            head->VisitTopDown(*if_finder);
+
+            if (if_finder->if_stmts_.size() > 0)
+            {
+                auto if_expr = if_finder->if_stmts_[0];
+
+                // I expect this to be a block of variable declerations,
+                // the last decleration will be the conditional variable
+                auto cond = BuildRecursive(if_expr->Cond());
+                auto cond_module = std::dynamic_pointer_cast<Module>(cond);
+                auto cond_ib = std::dynamic_pointer_cast<InstructionBlock>(cond_module->back());
+
+                auto cond_var_name = [&]()->std::string
+                {
+                    if (auto last_instr = std::dynamic_pointer_cast<InstructionReturn>(cond_ib->back()))
+                    {
+                        auto var_name = last_instr->VarName();
+                        cond_ib->pop_back();
+                        return var_name;
+                    }
+                    throw std::runtime_error("unexpected");
+                }();
+
+                auto if_true = BuildRecursive(if_expr->IfTrue());
+                auto if_false = BuildRecursive(if_expr->IfFalse());
+
+                auto if_block = std::make_shared< IfBlock>(
+                    cond_var_name,
+                    if_true,
+                    if_false);
+
+                auto modulee = std::make_shared<Module>();
+                modulee->push_back(cond_ib);
+                modulee->push_back(if_block);
+                return modulee;
+            }
+            else
+            {
+                std::unordered_set<std::string> symbols_seen;
+
+                auto IB = std::make_shared<InstructionBlock>();
+
+                auto deps = head->DepthFirstAnySymbolicDependencyAndThis();
+                if (deps.DepthFirst.size() > 0)
+                {
+                    for (auto sym : deps.DepthFirst) {
+                        if (sym->IsExo())
+                            continue;
+                        if (symbols_seen.count(sym->Name()) != 0)
+                        {
+                            continue;
+                        }
+                        auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(sym)->Expr();
+                        IB->Add(std::make_shared<InstructionDeclareVariable>(sym->Name(), expr));
+                        symbols_seen.insert(sym->Name());
+
+                    }
+                    IB->Add(std::make_shared< InstructionReturn>(deps.DepthFirst.back()->Name()));
+                }
+                else
+                {
+                    if (auto symbol = std::dynamic_pointer_cast<Symbol>(head))
+                    {
+                        IB->Add(std::make_shared< InstructionReturn>(symbol->Name()));
+                    }
+                    else
+                    {
+                        throw std::domain_error("should not be possible");
+                    }
+                }
+                
+
+                auto modulee = std::make_shared<Module>();
+                modulee->push_back(IB);
+                return modulee;
+
+            }
+        }
+
         std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
         {
             // First we evaulate the function, in order to get an expression treee
@@ -40,29 +136,11 @@ namespace Cady {
 
             auto expr = function_root.as_operator_();
 
-            // maintain information about what symbol I've emitted
-            std::unordered_set<std::string> symbols_seen;
-
-            auto IB = std::make_shared<InstructionBlock>();
+            auto head_control_block = BuildRecursive(expr);
 
 
 
-            auto deps = expr->DepthFirstAnySymbolicDependencyAndThis();
-            for (auto head : deps.DepthFirst) {
-                if (head->IsExo())
-                    continue;
-                if (symbols_seen.count(head->Name()) != 0)
-                {
-                    continue;
-                }
-                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
-                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
-                symbols_seen.insert(head->Name());
-
-            }
-            IB->Add(std::make_shared< InstructionReturn>(deps.DepthFirst.back()->Name()));
-
-            auto f = std::make_shared<Function>(IB);
+            auto f = std::make_shared<Function>(head_control_block);
             for (auto const& arg : arguments)
             {
                 f->AddArg(std::make_shared<FunctionArgument>(FAK_Double, arg));

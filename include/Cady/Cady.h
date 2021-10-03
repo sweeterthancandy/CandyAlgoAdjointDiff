@@ -241,6 +241,23 @@ struct Operator : std::enable_shared_from_this<Operator>{
                 }
         }
         
+
+        template<class Observer>
+        void VisitTopDown(Observer&& obvserver)
+        {
+            auto this_ = shared_from_this();
+            obvserver(this_);
+            std::vector<std::shared_ptr<Operator > > stack{ this_ };
+            for (; stack.size();) {
+                auto head = stack.back();
+                stack.pop_back();
+                for (auto& ptr : head->children_) {
+                    obvserver(ptr);
+                    stack.push_back(ptr);
+                }
+            }
+        }
+        
         size_t Arity()const{ return children_.size(); }
         std::shared_ptr<Operator> At(size_t idx)const{
                 if( Arity() < idx ){
@@ -1139,6 +1156,57 @@ private:
 #endif
 
 
+
+struct If : Operator
+{
+    If(
+        std::shared_ptr<Operator> const& cond,
+        std::shared_ptr<Operator>const& if_true,
+        std::shared_ptr<Operator>const& if_false)
+        :Operator{ "if" }
+    {
+        Push(cond);
+        Push(if_true);
+        Push(if_false);
+    }
+    virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override {
+        return UnaryOperator::UnaryMinus(
+            BinaryOperator::Mul(
+                Sin::Make(At(0)),
+                At(0)->Diff(symbol)));
+    }
+    virtual void EmitCode(std::ostream& ss)const override {
+        throw std::domain_error("not a true expression");
+    }
+    static std::shared_ptr<If> Make(
+        std::shared_ptr<Operator> const& cond,
+        std::shared_ptr<Operator>const& if_true,
+        std::shared_ptr<Operator>const& if_false) {
+        return std::make_shared<If>(cond, if_true, if_false);
+    }
+    virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override {
+        return Make(
+            At(0),
+            opt_trans->Apply(At(1)),
+            opt_trans->Apply(At(2)));
+    }
+    virtual double EvalImpl(SymbolTable const& ST, EvalChecker& checker)const override {
+        auto cond = At(0)->EvalImpl(ST, checker);
+        if ( !! cond)
+        {
+            return At(1)->EvalImpl(ST, checker);
+        }
+        else
+        {
+            return At(2)->EvalImpl(ST, checker);
+        }
+    }
+
+    auto Cond()const { return At(0); }
+    auto IfTrue()const { return At(1); }
+    auto IfFalse()const { return At(2); }
+
+};
 
 
 inline void Operator::MutateToEndgenous(std::string const& name){
