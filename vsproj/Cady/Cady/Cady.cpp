@@ -36,10 +36,14 @@ struct BlackScholesCallOptionTest {
             using MathFunctions::Min;
             using MathFunctions::If;
 
+            Double special_condition = t * T - r * S;
 
             return If(
-                t,
-                [&]() { return Max(S - K, 0.0); },
+                special_condition,
+                [&]() {
+                    Double tmp = Max(S - K, special_condition);
+                    return tmp;
+                },
                 [&]()
                 {
                     Double df = Exp(-r * T);
@@ -164,7 +168,7 @@ void driver()
 
 
     ticker.emplace_back("BlackScholesSimple", std::make_shared<SimpleFunctionGenerator<kernel_ty>>());
-    //ticker.emplace_back("BlackScholesSingleExpr", std::make_shared< SingleExprFunctionGenerator<kernel_ty>>());
+    ticker.emplace_back("BlackScholesSingleExpr", std::make_shared< SingleExprFunctionGenerator<kernel_ty>>());
     //ticker.emplace_back("BlackScholesThreeAddress", std::make_shared< ThreeAddressFunctionGenerator<kernel_ty>>());
     //ticker.emplace_back("BlackScholesThreeAddressFwd", std::make_shared< ForwardDiffFunctionGenerator<kernel_ty>>());
 

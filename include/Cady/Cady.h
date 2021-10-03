@@ -191,7 +191,7 @@ struct Operator : std::enable_shared_from_this<Operator>{
         DependentsProfile DepthFirstAnySymbolicDependencyAndThis(){
                 DependentsProfile result;
                 CollectDepthFirstAnySymbolicDependency(result, true);
-                if( Kind() == OPKind_EndgenousSymbol ){
+                if (Kind() == OPKind_EndgenousSymbol || Kind() == OPKind_ExogenousSymbol) {
                         result.Add(std::reinterpret_pointer_cast<Symbol>(shared_from_this()));
                 }
                 return result;
