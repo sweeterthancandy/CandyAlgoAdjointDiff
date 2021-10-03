@@ -447,7 +447,6 @@ namespace Cady {
                 std::shared_ptr<SymbolicMatrix> adj_matrix = adj_matrix_list[0];
                 for (size_t idx = 1; idx < adj_matrix_list.size(); ++idx)
                 {
-                    std::cout << "idx=" << idx << "\n";
                     adj_matrix = adj_matrix_list[idx]->Multiply(*adj_matrix);
                 }
                 return adj_matrix;
@@ -461,7 +460,6 @@ namespace Cady {
                 std::shared_ptr<SymbolicMatrix> adj_matrix = rev_order[0];
                 for (size_t idx =1; idx <rev_order.size();++idx)
                 {
-                    std::cout << "idx=" << idx << "\n";
                     adj_matrix = adj_matrix->Multiply(*rev_order[idx]);
                 }
                 
@@ -491,12 +489,8 @@ namespace Cady {
             {
                 auto d_sym = std::string("d_") + arguments[idx];
                 auto d_expr_orig = adj_matrix->At(idx, 0);
-
-                cpu_timer timer;
                 Transform::FoldZero fold_zero;
                 auto d_expr_no_zero = fold_zero.Fold(d_expr_orig);
-                std::cout << "Folding " << idx << " took " << timer.format() << "\n";
-
                 auto d_expr_three_address = d_expr_no_zero->Clone(three_address_transform);
 
 

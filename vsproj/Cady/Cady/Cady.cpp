@@ -43,6 +43,9 @@ struct BlackScholesCallOptionTest {
             Double nd2 = Phi(d2);
             Double c = df * (F * nd1 - K * nd2);
 
+            return c;
+
+#if 0
 
             Double x0 = df * F * std;
             Double x1 = d * d1 * d2;
@@ -54,13 +57,18 @@ struct BlackScholesCallOptionTest {
             Double x7 = x6 * c * nd2;
             Double x8 = Log(x7) * x1 + x2;
 
-            // Double x9 = Log(x0) * Log(x1) * Log(x2) * Log(x3) * Log(x4) + Log(x5) * Log(x6) * Log(x7) * Log(x8);
+            //Double x9 = Log(x0) * Log(x1) * Log(x2) * Log(x3) * Log(x4) + Log(x5) * Log(x6) * Log(x7) * Log(x8);
             Double x9 = Log(x8) * Log(x7) + x5;
             Double x10 = x9 * (x0 + x1 + x2 + x7 * x8);
             Double x11 = Log(x10 + 1);
             Double x12 = x11 / (x11 + 1);
+            Double x13 = (x0 * x1 * x2 * x3 * x4) / (x5 * x6 * x7 * x8) + (x9 * x10 * x11 * x11 * x12);
 
-            return x12;
+            Double x14 = x13 * x13;
+            Double x15 = ( x14 + 1 )* x14;
+
+            return x13;
+#endif
         }
         Double EvaluateVec(std::vector<Double> const& args)
         {
@@ -309,7 +317,7 @@ void test_bs() {
 
 int main()
 {
-    // driver();
+    driver();
     test_bs();
     
     
