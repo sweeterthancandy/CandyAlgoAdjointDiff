@@ -32,18 +32,32 @@ struct BlackScholesCallOptionTest {
             using MathFunctions::Exp;
             using MathFunctions::Pow;
             using MathFunctions::Log;
+            using MathFunctions::Max;
+            using MathFunctions::Min;
 
-            Double df = Exp(-r * T);
-            Double F = S * Exp(r * T);
-            Double std = vol * Pow(T, 0.5);
-            Double d = Log(F / K) / std;
-            Double d1 = d + 0.5 * std;
-            Double d2 = d1 - std;
-            Double nd1 = Phi(d1);
-            Double nd2 = Phi(d2);
-            Double c = df * (F * nd1 - K * nd2);
 
-            return c;
+            return Max(S - K, 0.0);
+#if 0
+            auto on_expiry = ( t == T );
+            return If(on_expiry)
+                .Then([&]() {
+                    Double df = Exp(-r * T);
+                    Double F = S * Exp(r * T);
+                    Double std = vol * Pow(T, 0.5);
+                    Double d = Log(F / K) / std;
+                    Double d1 = d + 0.5 * std;
+                    Double d2 = d1 - std;
+                    Double nd1 = Phi(d1);
+                    Double nd2 = Phi(d2);
+                    Double c = df * (F * nd1 - K * nd2);
+                    return c;
+                }).Else([&]() {
+                    return Max(S - k, 0.0);
+                });
+#endif
+
+
+           
 
 #if 0
 
@@ -237,7 +251,7 @@ void test_bs() {
     double t = 0.0;
     double T = 2.0;
     double r = 0.00;
-    double S = 200;
+    double S = 201;
     double K = 200;
     double vol = 0.2;
 

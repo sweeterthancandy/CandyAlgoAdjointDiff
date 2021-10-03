@@ -164,6 +164,19 @@ namespace Frontend{
                 };
         }
 
+        template<class L, class R>
+        inline auto Min(L&& l, R&& r) {
+            return WithOperators{
+                    BinaryOperator::Min(AsOperator(l), AsOperator(r))
+            };
+        }
+        template<class L, class R>
+        inline auto Max(L&& l, R&& r) {
+            return WithOperators{
+                    BinaryOperator::Max(AsOperator(l), AsOperator(r))
+            };
+        }
+
         template<class Arg>
         inline auto Stmt(std::string const& name, Arg&& arg){
                 auto ptr = std::make_shared<EndgenousSymbol>(name, AsOperator(arg));
@@ -259,11 +272,19 @@ namespace MathFunctions{
         inline double Log(double x){
                 return std::log(x);
         }
+        inline double Min(double l, double r) {
+            return std::min(l, r);
+        }
+        inline double Max(double l, double r) {
+            return std::max(l, r);
+        }
 
         using Frontend::Phi;
         using Frontend::Exp;
         using Frontend::Pow;
         using Frontend::Log;
+        using Frontend::Min;
+        using Frontend::Max;
 
 } // end namespace MathFunctions
 } // end namespace Cady

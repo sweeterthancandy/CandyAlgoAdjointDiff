@@ -647,6 +647,9 @@ enum BinaryOperatorKind{
         OP_MUL,
         OP_DIV,
         OP_POW,
+
+        OP_MIN,
+        OP_MAX,
 };
 
 struct BinaryOperator : Operator{
@@ -666,6 +669,8 @@ struct BinaryOperator : Operator{
                 case OP_MUL: return {"MUL"};
                 case OP_DIV: return {"DIV"};
                 case OP_POW: return {"POW"};
+                case OP_MIN: return { "MIN" };
+                case OP_MAX: return { "MAX" };
                 }
                 return {"unknown_"};
         }
@@ -694,7 +699,16 @@ struct BinaryOperator : Operator{
                         {
                                 return std::pow(At(0)->EvalImpl(ST, checker),At(1)->EvalImpl(ST, checker));
                         }
+                case OP_MIN:
+                        {
+                                return std::min(At(0)->EvalImpl(ST, checker), At(1)->EvalImpl(ST, checker));
+                        }
+                case OP_MAX:
+                        {
+                                return std::max(At(0)->EvalImpl(ST, checker), At(1)->EvalImpl(ST, checker));
+                        }
                 }
+                std::abort();
         }
         virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override
         {
@@ -763,13 +777,37 @@ struct BinaryOperator : Operator{
                                         )
                                 );
                         }
+
+                        case OP_MIN:
+                        {
+                            return Min(
+                                LParam()->Diff(symbol),
+                                RParam()->Diff(symbol)
+                            );
+                        }
+                        case OP_MAX:
+                        {
+                            return Max(
+                                LParam()->Diff(symbol),
+                                RParam()->Diff(symbol)
+                            );
+                        }
                 }
+                std::abort();
         }
 
 
         virtual void EmitCode(std::ostream& ss)const override{
-                if( op_ == OP_POW ){
-                        ss << "std::pow(";
+            static std::unordered_map<BinaryOperatorKind, std::string> func_rep = {
+                { OP_POW, "std::pow" },
+                { OP_MIN, "std::min" },
+                { OP_MAX, "std::max" }
+            };
+                
+            auto iter = func_rep.find(op_);
+            if( iter != func_rep.end())
+            {
+                ss << iter->second << "(";
                         LParam()->EmitCode(ss);
                         ss << ", ";
                         RParam()->EmitCode(ss);
@@ -872,7 +910,16 @@ struct BinaryOperator : Operator{
         {
                 return std::make_shared<BinaryOperator>(OP_POW, left, right);
         }
-
+        static std::shared_ptr<Operator> Min(std::shared_ptr<Operator> const& left,
+            std::shared_ptr<Operator> const& right)
+        {
+            return std::make_shared<BinaryOperator>(OP_MIN, left, right);
+        }
+        static std::shared_ptr<Operator> Max(std::shared_ptr<Operator> const& left,
+            std::shared_ptr<Operator> const& right)
+        {
+            return std::make_shared<BinaryOperator>(OP_MAX, left, right);
+        }
         virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override{
                 return std::make_shared<BinaryOperator>(
                         op_,
