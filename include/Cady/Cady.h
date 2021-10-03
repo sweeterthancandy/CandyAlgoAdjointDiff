@@ -799,8 +799,25 @@ struct BinaryOperator : Operator{
                 return std::make_shared<BinaryOperator>(OP_ADD, left, right);
         }
         static std::shared_ptr<Operator> AddOpt(std::shared_ptr<Operator> const& left,
-            std::shared_ptr<Operator> const& right)
+                                                std::shared_ptr<Operator> const& right)
         {
+            // if the left is constant 1.0, just return the right
+            auto left_desc = ConstantDescription{ left };
+            if (left_desc.IsZero())
+            {
+                // 0 + x -> x
+                return right;
+            }
+
+
+            // if the right is constant 1.0, just return the left
+            auto right_desc = ConstantDescription{ right };
+            if (right_desc.IsZero())
+            {
+                // x + 0 -> x
+                return left;
+            }
+
             return std::make_shared<BinaryOperator>(OP_ADD, left, right);
         }
         static std::shared_ptr<Operator> Sub(std::shared_ptr<Operator> const& left,
