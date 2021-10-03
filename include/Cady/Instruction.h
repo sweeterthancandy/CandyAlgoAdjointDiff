@@ -166,7 +166,7 @@ namespace Cady {
             : cond_{ cond }, if_true_{ if_true }, if_false_{ if_false }
         {}
         std::string const& ConditionVariable()const { return cond_;  }
-        std::shared_ptr<ControlBlock> const& Iftrue()const { return if_true_;  }
+        std::shared_ptr<ControlBlock> const& IfTrue()const { return if_true_;  }
         std::shared_ptr<ControlBlock> const& IfFalse()const { return if_false_; }
         void EmitCode(std::ostream& out)const
         {

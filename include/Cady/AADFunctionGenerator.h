@@ -132,8 +132,6 @@ namespace Cady {
 
             auto head_control_block = BuildRecursive(expr);
 
-
-
             auto f = std::make_shared<Function>(head_control_block);
             for (auto const& arg : arguments)
             {
@@ -184,8 +182,6 @@ namespace Cady {
 
             auto head_control_block = BuildRecursive(expr_trans);
 
-
-
             auto f = std::make_shared<Function>(head_control_block);
             for (auto const& arg : arguments)
             {
@@ -193,9 +189,6 @@ namespace Cady {
             }
 
             return f;
-
-
-
         };
     };
 
@@ -220,42 +213,20 @@ namespace Cady {
 
             auto expr = function_root.as_operator_();
 
-
-            // now we transform the expression into threee address code
             auto three_address_transform = std::make_shared<Transform::RemapUnique>();
             auto three_address_tree = expr->Clone(three_address_transform);
 
-            // maintain information about what symbol I've emitted
-            std::unordered_set<std::string> three_addr_seen;
+            auto head_control_block = BuildRecursive(three_address_tree);
 
-            auto IB = std::make_shared<InstructionBlock>();
-
-
-
-            auto deps = three_address_tree->DepthFirstAnySymbolicDependencyAndThis();
-            for (auto head : deps.DepthFirst) {
-                if (head->IsExo())
-                    continue;
-                if (three_addr_seen.count(head->Name()) != 0)
-                {
-                    continue;
-                }
-                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
-                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
-                three_addr_seen.insert(head->Name());
-
-            }
-            IB->Add(std::make_shared< InstructionReturn>(deps.DepthFirst.back()->Name()));
-
-
-
-            auto f = std::make_shared<Function>(IB);
+            auto f = std::make_shared<Function>(head_control_block);
             for (auto const& arg : arguments)
             {
                 f->AddArg(std::make_shared<FunctionArgument>(FAK_Double, arg));
             }
 
             return f;
+
+
         };
     };
 
@@ -376,6 +347,80 @@ namespace Cady {
         };
     };
 
+    template<class Kernel>
+    class AADFunctionGeneratorEx : public FunctionGenerator
+    {
+    public:
+        enum AADPropogationType
+        {
+            AADPT_Forwards,
+            AADPT_Backwards,
+        };
+
+        AADPropogationType propogation_type_;
+        AADFunctionGeneratorEx(AADPropogationType propogation_type)
+        {
+            propogation_type_ = propogation_type;
+        }
+        std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
+        {
+            using impl_ty = ThreeAddressFunctionGenerator<Kernel>;
+
+            auto f = impl_ty{}.GenerateInstructionBlock();
+
+            auto m = f->GetModule();
+
+            auto ad_kernel = Kernel::template Build<DoubleKernel>();
+            auto arguments = ad_kernel.Arguments();
+
+            CloneAAD(m);
+
+            
+            return f;
+            
+        }
+        void CloneAAD(
+            std::shared_ptr<ControlBlock> cb,
+            std::vector<std::shared_ptr< ImpliedMatrixFunction >> matrix_func_list = {})const
+        {
+            if (auto m = std::dynamic_pointer_cast<Module>(cb))
+            {
+                for (auto const& x : *m)
+                {
+                    if (auto IB = std::dynamic_pointer_cast<InstructionBlock>(x))
+                    {
+                        for (auto const& instr : *IB)
+                        {
+                            if (auto decl_instr = std::dynamic_pointer_cast<InstructionDeclareVariable>(instr))
+                            {
+                                auto expr = decl_instr->as_operator_();
+                                auto matrix_func = ImpliedMatrixFunction::Make(matrix_func_list.size(), instr);
+
+                                matrix_func_list.push_back(matrix_func);
+                            }
+                            else if (auto decl_instr = std::dynamic_pointer_cast<InstructionReturn>(instr))
+                            {
+                                // now add documentation to function
+                                
+                                for (auto const& mf : matrix_func_list)
+                                {
+                                    IB->Add(mf->MakeComment());
+                                }
+                                return; // important
+                            }
+
+                        }
+                    }
+                    else if (auto if_stmt = std::dynamic_pointer_cast<IfBlock>(x))
+                    {
+                        CloneAAD(if_stmt->IfTrue(), matrix_func_list);
+                        CloneAAD(if_stmt->IfFalse(), matrix_func_list);
+                        
+                    }
+                }
+            }
+        }
+    };
 
 
     template<class Kernel>
