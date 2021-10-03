@@ -5,14 +5,83 @@
 
 namespace Cady {
 
-    template<class Function>
+
+    class AADFunctionGeneratorPersonality
+    {
+    public:
+        bool matrix_function_comments{ true };
+    };
+
+
+    template<class Kernel>
+    class ThreeAddressFunctionGenerator
+    {
+    public:
+        std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
+        {
+            // First we evaulate the function, in order to get an expression treee
+            auto ad_kernel = Kernel::template Build<DoubleKernel>();
+
+            auto arguments = ad_kernel.Arguments();
+
+            std::vector<DoubleKernel> symbolc_arguments;
+            for (auto const& arg : arguments)
+            {
+                symbolc_arguments.push_back(DoubleKernel::BuildFromExo(arg));
+            }
+            auto function_root = ad_kernel.EvaluateVec(symbolc_arguments);
+
+            auto expr = function_root.as_operator_();
+
+
+            // now we transform the expression into threee address code
+            auto three_address_transform = std::make_shared<Transform::RemapUnique>();
+            auto three_address_tree = expr->Clone(three_address_transform);
+
+            // maintain information about what symbol I've emitted
+            std::unordered_set<std::string> three_addr_seen;
+
+            auto IB = std::make_shared<InstructionBlock>();
+
+
+
+            auto deps = three_address_tree->DepthFirstAnySymbolicDependencyAndThis();
+            for (auto head : deps.DepthFirst) {
+                if (head->IsExo())
+                    continue;
+                if (three_addr_seen.count(head->Name()) != 0)
+                {
+                    continue;
+                }
+                auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                IB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                three_addr_seen.insert(head->Name());
+
+            }
+            IB->Add(std::make_shared< InstructionReturn>(deps.DepthFirst.back()->Name()));
+
+
+
+            auto f = std::make_shared<Function>(IB);
+            for (auto const& arg : arguments)
+            {
+                f->AddArg(std::make_shared<FunctionArgument>(FAK_Double, arg));
+            }
+
+            return f;
+        };
+    };
+
+
+
+    template<class Kernel>
     class AADFunctionGenerator
     {
     public:
-        std::shared_ptr<InstructionBlock> GenerateInstructionBlock()const
+        std::shared_ptr<Function> GenerateInstructionBlock(AADFunctionGeneratorPersonality personality = AADFunctionGeneratorPersonality{})const
         {
             // First we evaulate the function, in order to get an expression treee
-            auto ad_kernel = Function::template Build<DoubleKernel>();
+            auto ad_kernel = Kernel::template Build<DoubleKernel>();
 
             auto arguments = ad_kernel.Arguments();
 
@@ -152,9 +221,20 @@ namespace Cady {
                 AADIB->Add(std::make_shared< InstructionText>(ss.str()));
             }
 
-            return AADIB;
-        }
+            auto f = std::make_shared<Function>(AADIB);
+            f->SetFunctionName(ad_kernel.Name());
+            for (auto const& arg : arguments)
+            {
+                f->AddArg(std::make_shared<FunctionArgument>(FAK_Double, arg));
+            }
+            for (auto const& arg : arguments)
+            {
+                f->AddArg(std::make_shared<FunctionArgument>(FAK_OptDoublePtr, "d_" + arg));
+            }
 
+            return f;
+        }
+#if 0
         void EmitToString(std::ostream& ostr)const
         {
             auto ad_kernel = Function::template Build<DoubleKernel>();
@@ -193,6 +273,7 @@ namespace Cady {
             this->EmitToString(ss);
             return ss.str();
         }
+#endif
 
     };
 

@@ -125,6 +125,8 @@ namespace Cady {
         std::string name_;
     };
 
+    
+
     struct InstructionBlock : std::vector<std::shared_ptr<Instruction> > {
         virtual ~InstructionBlock() = default;
         void Add(std::shared_ptr<Instruction> instr) {
@@ -145,6 +147,55 @@ namespace Cady {
             }
         }
     };
+
+
+    enum FunctionArgumentKind
+    {
+        FAK_Double,
+        FAK_OptDoublePtr,
+    };
+
+    struct FunctionArgument
+    {
+        FunctionArgument(
+            FunctionArgumentKind kind,
+            std::string const& name) :
+            kind_{ kind }, name_{ name }
+        {}
+        FunctionArgumentKind Kind()const { return kind_; }
+        std::string const& Name()const { return name_; }
+    private:
+        FunctionArgumentKind kind_;
+        std::string name_;
+    };
+
+    // this is a WIP, at some point want to add branching
+    struct Function
+    {
+        explicit Function(
+            std::shared_ptr< InstructionBlock> const& ib)
+            :ib_{ ib } {}
+        void AddArg(std::shared_ptr < FunctionArgument> const& arg)
+        {
+            args_.push_back(arg);
+        }
+        auto args_begin()const { return std::begin(args_); }
+        auto args_end()const { return std::end(args_); }
+        void SetFunctionName(std::string const& func_name)
+        {
+            func_name_ = func_name;
+        }
+        std::string const& FunctionName()const {
+            return func_name_;
+        }
+        auto const& IB()const { return ib_; }
+    private:
+        std::shared_ptr< InstructionBlock> ib_;
+        std::string func_name_{ "unnamed_function" };
+        std::vector<std::shared_ptr< FunctionArgument> > args_;
+    };
+
+
 } // end namespace Cady
 
 #endif // INCLUDE_INSTRUCTION_H

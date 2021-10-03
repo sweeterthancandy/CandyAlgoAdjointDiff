@@ -44,5 +44,8 @@
     <ClInclude Include="..\..\..\include\Cady\AADFunctionGenerator.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\include\Cady\CodeWriter.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

@@ -7,6 +7,7 @@
 namespace Cady{
 namespace CodeGen{
 
+#if 0
 struct StringCodeGenerator{
         void Emit(std::ostream& ss, Function const& f)const{
 
@@ -164,6 +165,7 @@ struct StringCodeGenerator{
 
         }
 };
+#endif
 
 } // end namespace CodeGen
 } // end namespace Cady

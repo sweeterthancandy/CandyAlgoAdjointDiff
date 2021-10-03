@@ -997,6 +997,7 @@ private:
         size_t index_{0};
 };
 
+#if 0
 struct Function{
         explicit Function(std::string const& name):name_{name}{}
         void AddArgument(std::string const& symbol){
@@ -1015,6 +1016,7 @@ private:
         std::vector<std::string> args_;
         std::vector<std::shared_ptr<EndgenousSymbol> > stmts_;
 };
+#endif
 
 struct ConstantDescription{
         ConstantDescription(std::shared_ptr<Operator> root){
