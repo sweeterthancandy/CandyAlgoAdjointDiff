@@ -126,11 +126,25 @@ namespace Cady {
         std::string name_;
     };
 
+    struct IfBlock;
+    struct CallBlock;
 
-    struct ControlBlock
+    struct ControlBlockVisitor
+    {
+        virtual ~ControlBlockVisitor() = default;
+        virtual void AcceptInstruction(const std::shared_ptr<const Instruction>& instr)= 0;
+        virtual void AcceptIf(const std::shared_ptr<const IfBlock>& if_block)= 0;
+        virtual void AcceptCall(const std::shared_ptr<const CallBlock>& call_block)= 0;
+    };
+
+   
+
+
+    struct ControlBlock : std::enable_shared_from_this<ControlBlock>
     {
         virtual ~ControlBlock() = default;
         virtual void EmitCode(std::ostream& out)const = 0;
+        virtual void Accept(ControlBlockVisitor& V)const = 0;
     };
     
 
@@ -152,6 +166,12 @@ namespace Cady {
         virtual void EmitCode(std::ostream& out)const {
             for (auto const& ptr : *this) {
                 ptr->EmitCode(out);
+            }
+        }
+        virtual void Accept(ControlBlockVisitor& V)const override
+        {
+            for (auto const& ptr : *this) {
+                V.AcceptInstruction(ptr);
             }
         }
     };
@@ -179,10 +199,37 @@ namespace Cady {
             if_false_->EmitCode(out);
             out << "    }\n";
         }
+        virtual void Accept(ControlBlockVisitor& V)const override
+        {
+            V.AcceptIf(std::static_pointer_cast<const IfBlock>(shared_from_this()));
+        }
     private:
         std::string cond_;
         std::shared_ptr<ControlBlock> if_true_;
         std::shared_ptr<ControlBlock> if_false_;
+    };
+
+    struct CallBlock : ControlBlock
+    {
+        explicit CallBlock(
+            std::string const& return_name,
+            std::vector < std::string> const& args) :args_{ args } {}
+        void EmitCode(std::ostream& out)const
+        {
+            out << "double " << return_name_ << " = f(";
+            for (size_t idx = 0; idx != args_.size(); ++idx)
+            {
+                out << (idx == 0 ? "" : ", ") << args_[idx];
+            }
+            out << ")";
+        }
+        virtual void Accept(ControlBlockVisitor& V)const override
+        {
+            V.AcceptCall(std::static_pointer_cast<const CallBlock>(shared_from_this()));
+        }
+    private:
+        std::string return_name_;
+        std::vector<std::string> args_;
     };
 
     struct Module : ControlBlock, std::vector<std::shared_ptr<ControlBlock> >
@@ -192,6 +239,13 @@ namespace Cady {
             for (auto const& x : *this)
             {
                 x->EmitCode(out);
+            }
+        }
+        virtual void Accept(ControlBlockVisitor& V)const override
+        {
+            for (auto const& x : *this)
+            {
+                x->Accept(V);
             }
         }
     };

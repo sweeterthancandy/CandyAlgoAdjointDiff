@@ -1170,10 +1170,7 @@ struct If : Operator
         Push(if_false);
     }
     virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override {
-        return UnaryOperator::UnaryMinus(
-            BinaryOperator::Mul(
-                Sin::Make(At(0)),
-                At(0)->Diff(symbol)));
+        throw std::domain_error("not a true expression");
     }
     virtual void EmitCode(std::ostream& ss)const override {
         throw std::domain_error("not a true expression");
@@ -1186,7 +1183,7 @@ struct If : Operator
     }
     virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override {
         return Make(
-            At(0),
+            opt_trans->Apply(At(0)),
             opt_trans->Apply(At(1)),
             opt_trans->Apply(At(2)));
     }
@@ -1206,6 +1203,44 @@ struct If : Operator
     auto IfTrue()const { return At(1); }
     auto IfFalse()const { return At(2); }
 
+};
+
+
+struct Call : Operator
+{
+    
+    Call(std::vector<std::shared_ptr<Operator> > const& args)
+        :Operator{ "call" }
+    {
+        for (auto const& arg : args)
+        {
+            Push(arg);
+        }
+    }
+    virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override {
+        throw std::domain_error("not a true expression");
+    }
+    virtual void EmitCode(std::ostream& ss)const override {
+        ss << " // call proxy\n";
+        //throw std::domain_error("not a true expression");
+    }
+    template<class... Args>
+    static std::shared_ptr<Call> Make(Args&&... args)
+    {
+        std::vector<std::shared_ptr<Operator> > tmp = { args... };
+        return std::make_shared<Call>(tmp);
+    }
+    virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override {
+        std::vector<std::shared_ptr<Operator> > mapped_args;
+        for (auto const& arg : Children())
+        {
+            mapped_args.push_back(arg->Clone(opt_trans));
+        }
+        return Make(mapped_args);
+    }
+    virtual double EvalImpl(SymbolTable const& ST, EvalChecker& checker)const override {
+        throw std::domain_error("not a true expression");
+    }
 };
 
 

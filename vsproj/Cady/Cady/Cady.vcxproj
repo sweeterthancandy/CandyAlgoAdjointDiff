@@ -154,6 +154,7 @@
     <ClInclude Include="..\..\..\include\Cady\Instruction.h" />
     <ClInclude Include="..\..\..\include\Cady\SymbolicMatrix.h" />
     <ClInclude Include="..\..\..\include\Cady\Transform.h" />
+    <ClInclude Include="ProgramCode.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

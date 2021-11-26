@@ -50,5 +50,8 @@
     <ClInclude Include="..\..\..\include\Cady\CpuTimer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ProgramCode.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

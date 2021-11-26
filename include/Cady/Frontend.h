@@ -194,6 +194,18 @@ namespace Frontend{
             };
         }
 
+
+        template<
+            class FunctionDecl,
+            class... Args>
+            inline auto Call(
+                FunctionDecl&&,
+                Args&&... args)
+        {
+            return WithOperators{Call::Make(AsOperator(args)...) };
+        }
+     
+
         template<class Arg>
         inline auto Stmt(std::string const& name, Arg&& arg){
                 auto ptr = std::make_shared<EndgenousSymbol>(name, AsOperator(arg));
@@ -318,6 +330,7 @@ namespace MathFunctions{
         using Frontend::Min;
         using Frontend::Max;
         using Frontend::If;
+        using Frontend::Call;
 
 } // end namespace MathFunctions
 } // end namespace Cady
