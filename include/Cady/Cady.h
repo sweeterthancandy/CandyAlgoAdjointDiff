@@ -1213,8 +1213,8 @@ struct If : Operator
 struct Call : Operator
 {
     
-    Call(std::vector<std::shared_ptr<Operator> > const& args)
-        :Operator{ "call" }
+    Call(std::string const& name, std::vector<std::shared_ptr<Operator> > const& args)
+        :Operator{ "call" }, name_{ name }
     {
         for (auto const& arg : args)
         {
@@ -1229,10 +1229,10 @@ struct Call : Operator
         //throw std::domain_error("not a true expression");
     }
     template<class... Args>
-    static std::shared_ptr<Call> Make(Args&&... args)
+    static std::shared_ptr<Call> Make(std::string const& name, Args&&... args)
     {
         std::vector<std::shared_ptr<Operator> > tmp = { args... };
-        return std::make_shared<Call>(tmp);
+        return std::make_shared<Call>(name, tmp);
     }
     virtual std::shared_ptr<Operator> Clone(std::shared_ptr<OperatorTransform> const& opt_trans)const override {
         std::vector<std::shared_ptr<Operator> > mapped_args;
@@ -1240,11 +1240,14 @@ struct Call : Operator
         {
             mapped_args.push_back(arg->Clone(opt_trans));
         }
-        return Make(mapped_args);
+        return Make(name_, mapped_args);
     }
     virtual double EvalImpl(SymbolTable const& ST, EvalChecker& checker)const override {
         throw std::domain_error("not a true expression");
     }
+    std::string const& FunctionName()const { return name_; }
+private:
+    std::string name_;
 };
 
 

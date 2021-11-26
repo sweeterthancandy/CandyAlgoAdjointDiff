@@ -206,7 +206,16 @@ namespace Frontend{
                 FunctionDecl&&,
                 Args&&... args)
         {
-            return WithOperators{Call::Make(AsOperator(args)...) };
+            using kernel_ty = std::decay_t<FunctionDecl>;
+            using func_ty = typename kernel_ty::template Build<double>;
+            const auto expected_size = func_ty{}.Arguments().size();
+            if (sizeof...(args) != expected_size)
+            {
+                std::stringstream ss;
+                ss << "expected " << expected_size << " but got " << sizeof...(args) << " arguments for " << func_ty{}.Name();
+                throw std::domain_error(ss.str());
+            }
+            return WithOperators{ Call::Make(func_ty{}.Name(), AsOperator(args)...) };
         }
      
 
