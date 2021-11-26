@@ -61,14 +61,13 @@ struct BlackScholesCallOptionTest {
             using MathFunctions::If;
             using MathFunctions::Call;
 
-            Double special_condition = t * T - r * S;
+            Double special_condition = T - t;
 
             return If(
                 special_condition,
                 [&]() {
-                    //Double tmp = Max(S - K, special_condition);
-
-                    Double tmp = Call(MyMax{}, S - K, special_condition);
+                    Double tmp = Max(S - K, special_condition);
+                    //Double tmp = Call(MyMax{}, S - K, special_condition);
                     return tmp;
                 },
                 [&]()
@@ -604,6 +603,8 @@ namespace Cady
             OP_ERFC,
             OP_USUB,
             OP_EXP,
+            OP_LOG,
+            OP_PHI,
 
 
             // binary
@@ -626,6 +627,9 @@ namespace Cady
             case OP_ERFC: return ostr << "OP_ERFC";
             case OP_USUB: return ostr << "OP_USUB";
             case OP_EXP: return ostr << "OP_EXP";
+            case OP_LOG: return ostr << "OP_LOG";
+            case OP_PHI: return ostr << "OP_PHI";
+                
 
             case OP_ADD: return ostr << "OP_ADD";
             case OP_SUB: return ostr << "OP_SUB";
@@ -719,9 +723,16 @@ namespace Cady
 
         struct Function
         {
-            Function(std::vector<std::shared_ptr<Statement> > const& stmts)
-                : stmts_{ stmts }
+            Function(
+                std::string const& name,
+                std::vector<std::string> const& args, 
+                std::vector<std::shared_ptr<Statement> > const& stmts)
+                : name_{ name }, args_ {
+                args
+            }, stmts_{ std::make_shared<StatementList>(stmts)
+            }
             {}
+
             void DebugPrintStmt(std::shared_ptr<Statement> const& stmt, size_t indent)const
             {
                 if (auto three_addr = std::dynamic_pointer_cast<ThreeAddressCode>(stmt))
@@ -763,15 +774,134 @@ namespace Cady
                     std::string();
                 }
             }
+
             void DebugPrint()const
             {
-                for (auto const& stmt : stmts_)
+                for (auto const& stmt : *stmts_)
                 {
                     DebugPrintStmt(stmt, 0);
                 }
             }
+            auto const& Name()const { return name_; }
+            auto const& Args()const { return args_; }
+            auto const& Statements()const { return stmts_;  }
         private:
-            std::vector<std::shared_ptr<Statement> > stmts_;
+            std::string name_;
+            std::vector<std::string> args_;
+            std::shared_ptr<StatementList> stmts_;
+        };
+
+
+        struct CodeWriter
+        {
+            void EmitCode(std::ostream& ostr, std::shared_ptr< Function> const& f)const
+            {
+                ostr << "double " << f->Name() << "(";
+                auto const& args = f->Args();
+                for (size_t idx = 0; idx != args.size(); ++idx)
+                {
+                    ostr << (idx == 0 ? "" : ", ") << "const double " << args[idx];
+                }
+                ostr << ")\n";
+                ostr << "{\n";
+                EmitCodeForStatement(ostr, f->Statements(), 1);
+                ostr << "}\n";
+            }
+            void EmitCodeForStatement(std::ostream& ostr, std::shared_ptr<Statement> const& stmt, size_t indent)const
+            {
+                auto do_indent = [&]() {
+                    if (indent != 0)
+                    {
+                        ostr << std::string(indent * 4, ' ');
+                    }
+                };
+                if (auto three_addr = std::dynamic_pointer_cast<ThreeAddressCode>(stmt))
+                {
+                    do_indent();
+                    ostr << "const double " << three_addr->name_->ToString() << " = ";
+                    switch (three_addr->op_)
+                    {
+                    case OP_ADD:
+                        ostr << three_addr->l_param_->ToString() << " + " << three_addr->r_param_->ToString() << ";\n";
+                        break;
+                    case OP_SUB:
+                        ostr << three_addr->l_param_->ToString() << " - " << three_addr->r_param_->ToString() << ";\n";
+                        break;
+                    case OP_MUL:
+                        ostr << three_addr->l_param_->ToString() << " * " << three_addr->r_param_->ToString() << ";\n";
+                        break;
+                    case OP_DIV:
+                        ostr << three_addr->l_param_->ToString() << " / " << three_addr->r_param_->ToString() << ";\n";
+                        break;
+                    case OP_POW:
+                        ostr << "std::pow(" << three_addr->l_param_->ToString() << "," << three_addr->r_param_->ToString() << ");\n";
+                        break;
+                    case OP_MIN:
+                        ostr << "std::min(" << three_addr->l_param_->ToString() << "," << three_addr->r_param_->ToString() << ");\n";
+                        break;
+                    case OP_MAX:
+                        ostr << "std::max(" << three_addr->l_param_->ToString() << "," << three_addr->r_param_->ToString() << ");\n";
+                        break;
+                    default:
+                        throw std::domain_error("TODO");
+                    }
+                }
+                else if (auto two_addr = std::dynamic_pointer_cast<TwoAddressCode>(stmt))
+                {
+                    do_indent();
+                    ostr << "const double " << two_addr->rvalue_->ToString() << " = ";
+                    switch (two_addr->op_)
+                    {
+                    case OP_USUB:
+                        ostr << "- " << two_addr->param_->ToString() << ";\n";
+                        break;
+                    case OP_ASSIGN:
+                        ostr << two_addr->param_->ToString() << ";\n";
+                        break;
+                    case OP_EXP:
+                        ostr << "std::exp(" << two_addr->param_->ToString() << ");\n";
+                        break;
+                    case OP_LOG:
+                        ostr << "std::log(" << two_addr->param_->ToString() << ");\n";
+                        break;
+                    case OP_PHI:
+                        ostr << "std::erfc(-(";
+                        ostr << two_addr->param_->ToString();
+                        ostr << ")/std::sqrt(2))/2;\n";
+                        break;
+                    default:
+                        throw std::domain_error("TODO");
+                    }
+
+                }
+                else if (auto if_stmt = std::dynamic_pointer_cast<IfStatement>(stmt))
+                {
+                    do_indent();
+                    ostr << "if( !! " << if_stmt->condition_->ToString() << " ){\n";
+                    EmitCodeForStatement(ostr,if_stmt->if_true_, indent + 1);
+                    do_indent();
+                    std::cout << "} else {\n";
+                    EmitCodeForStatement(ostr, if_stmt->if_false_, indent + 1);
+                    do_indent();
+                    std::cout << "}\n";
+                }
+                else if (auto stmts = std::dynamic_pointer_cast<StatementList>(stmt))
+                {
+                    for (auto const& x : *stmts)
+                    {
+                        EmitCodeForStatement(ostr, x, indent);
+                    }
+                }
+                else if (auto return_stmt = std::dynamic_pointer_cast<ReturnStatement>(stmt))
+                {
+                    do_indent();
+                    ostr << "return " << return_stmt->value_->ToString() << ";\n";
+                }
+                else
+                {
+                    std::string();
+                }
+            }
         };
 
     } // end namespace ProgramCode
@@ -875,6 +1005,24 @@ struct InstructionLinearizer : ControlBlockVisitor
 
                     stmts_.push_back(two_address);
                 }
+                else if (auto as_log = std::dynamic_pointer_cast<const Log>(op))
+                {
+                    auto two_address = std::make_shared<ProgramCode::TwoAddressCode>(
+                        ProgramCode::OpCode::OP_LOG,
+                        std::make_shared<ProgramCode::LValue>(as_lvalue_assign->LValueName()),
+                        make_rvalue(as_log->At(0)));
+
+                    stmts_.push_back(two_address);
+                }
+                else if (auto as_phi = std::dynamic_pointer_cast<const Phi>(op))
+                {
+                    auto two_address = std::make_shared<ProgramCode::TwoAddressCode>(
+                        ProgramCode::OpCode::OP_PHI,
+                        std::make_shared<ProgramCode::LValue>(as_lvalue_assign->LValueName()),
+                        make_rvalue(as_phi->At(0)));
+
+                    stmts_.push_back(two_address);
+                }
                 else
                 {
                     std::string();
@@ -959,6 +1107,75 @@ int main()
     auto l = std::make_shared< InstructionLinearizer>();
     M->Accept(*l);
 
-    auto ff = std::make_shared<ProgramCode::Function>(l->stmts_);
+    auto ff = std::make_shared<ProgramCode::Function>("black", arguments, l->stmts_);
     ff->DebugPrint();
+
+    ProgramCode::CodeWriter{}.EmitCode(std::cout, ff);
+}
+
+
+double black(double t, double T, double r, double S, double K, double vol)
+{
+    const double __symbol_37 = t;
+    const double __symbol_2 = T;
+    const double __symbol_38 = __symbol_37 * __symbol_2;
+    const double __symbol_9 = r;
+    const double __symbol_12 = S;
+    const double __symbol_36 = __symbol_9 * __symbol_12;
+    const double __symbol_39 = __symbol_38 - __symbol_36;
+    const double __statement_0 = __symbol_39;
+    const double result = __statement_0;
+    if (!!result) {
+        const double __symbol_37 = t;
+        const double __symbol_2 = T;
+        const double __symbol_38 = __symbol_37 * __symbol_2;
+        const double __symbol_9 = r;
+        const double __symbol_12 = S;
+        const double __symbol_36 = __symbol_9 * __symbol_12;
+        const double __symbol_39 = __symbol_38 - __symbol_36;
+        const double __statement_0 = __symbol_39;
+        const double __symbol_8 = K;
+        const double __symbol_40 = 0.0;
+        const double __statement_10 = __symbol_40;
+        const double result = __statement_10;
+        return result;
+    }
+    else {
+        const double __symbol_9 = r;
+        const double __symbol_30 = -__symbol_9;
+        const double __symbol_2 = T;
+        const double __symbol_31 = __symbol_30 * __symbol_2;
+        const double __symbol_32 = std::exp(__symbol_31);
+        const double __statement_1 = __symbol_32;
+        const double __symbol_12 = S;
+        const double __symbol_10 = __symbol_9 * __symbol_2;
+        const double __symbol_11 = std::exp(__symbol_10);
+        const double __symbol_13 = __symbol_12 * __symbol_11;
+        const double __statement_2 = __symbol_13;
+        const double __symbol_8 = K;
+        const double __symbol_15 = __statement_2 / __symbol_8;
+        const double __symbol_16 = std::log(__symbol_15);
+        const double __symbol_4 = vol;
+        const double __symbol_3 = std::pow(__symbol_2, 0.500000);
+        const double __symbol_5 = __symbol_4 * __symbol_3;
+        const double __statement_3 = __symbol_5;
+        const double __symbol_17 = __symbol_16 / __statement_3;
+        const double __statement_4 = __symbol_17;
+        const double __symbol_7 = 0.500000 * __statement_3;
+        const double __symbol_19 = __statement_4 + __symbol_7;
+        const double __statement_5 = __symbol_19;
+        const double __symbol_26 = std::erfc(-(__statement_5) / std::sqrt(2)) / 2;
+        const double __statement_7 = __symbol_26;
+        const double __symbol_28 = __statement_2 * __statement_7;
+        const double __symbol_21 = __statement_5 - __statement_3;
+        const double __statement_6 = __symbol_21;
+        const double __symbol_23 = std::erfc(-(__statement_6) / std::sqrt(2)) / 2;
+        const double __statement_8 = __symbol_23;
+        const double __symbol_25 = __symbol_8 * __statement_8;
+        const double __symbol_29 = __symbol_28 - __symbol_25;
+        const double __symbol_34 = __statement_1 * __symbol_29;
+        const double __statement_9 = __symbol_34;
+        const double result = __statement_9;
+        return result;
+    }
 }
