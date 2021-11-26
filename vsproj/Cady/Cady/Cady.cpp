@@ -42,6 +42,31 @@ struct MyMax {
 };
 
 
+struct MyLogKFDivStd{
+
+    template<class Double>
+    struct Build {
+        Double Evaluate(
+            Double K,
+            Double F,
+            Double std)const
+        {
+            using MathFunctions::Log;
+            Double result = Log(F / K) / std;
+            return result;
+        }
+        std::vector<std::string> Arguments()const
+        {
+            return { "K", "F", "std"};
+        }
+        std::string Name()const
+        {
+            return "MyLogKFDivStd";
+        }
+    };
+};
+
+
 struct BlackScholesCallOptionTest {
     template<class Double>
     struct Build {
@@ -62,15 +87,27 @@ struct BlackScholesCallOptionTest {
             using MathFunctions::If;
             using MathFunctions::Call;
 
-            Double special_condition = T - t;
+            Double df = Exp(-r * T);
+            Double F = S * Exp(r * T);
+            Double std = vol * Pow(T, 0.5);
+            //Double d = Log(F / K) / std;
+            Double d = Call(Double{}, MyLogKFDivStd{}, K, F, std);
+            Double d1 = d + 0.5 * std;
+            Double d2 = d1 - std;
+            Double nd1 = Phi(d1);
+            Double nd2 = Phi(d2);
+            Double c = df * (F * nd1 - K * nd2);
+            return c;
 
+#if 0
             return If(
                 special_condition,
                 [&]() {
                     Double df = Exp(-r * T);
                     Double F = S * Exp(r * T);
                     Double std = vol * Pow(T, 0.5);
-                    Double d = Log(F / K) / std;
+                    //Double d = Log(F / K) / std;
+                    Double d = Call(MyLogKFDivStd{}, K, F, std);
                     Double d1 = d + 0.5 * std;
                     Double d2 = d1 - std;
                     Double nd1 = Phi(d1);
@@ -91,6 +128,7 @@ struct BlackScholesCallOptionTest {
                     Double c = df * (F * nd1 - K * nd2);
                     return c;
                 });
+#endif
 #if 0
             auto on_expiry = ( t == T );
             return If(on_expiry)

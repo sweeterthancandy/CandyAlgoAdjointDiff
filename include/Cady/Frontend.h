@@ -196,9 +196,13 @@ namespace Frontend{
 
 
         template<
+            class Kernel,
             class FunctionDecl,
-            class... Args>
-            inline auto Call(
+            class... Args,
+            class = std::void_t<std::enable_if_t<!std::is_same<double, std::decay_t<Kernel> >::value > >
+        >
+        inline auto Call(
+                Kernel&&,
                 FunctionDecl&&,
                 Args&&... args)
         {
@@ -270,6 +274,7 @@ struct DoubleKernel : Frontend::ImbueWith{
                 ++counter;
                 return ss.str();
         }
+        DoubleKernel() = default;
         template< class Expr >
         DoubleKernel(Expr&& expr)
                 : impl_{std::make_shared<DoubleKernelOperator>(EndgenousSymbol::Make(Tag(), Frontend::AsOperator(expr)))}
@@ -322,6 +327,23 @@ namespace MathFunctions{
                 return if_false();
             }
         }
+
+        template<
+            class Kernel,
+            class FunctionDecl,
+            class... Args,
+            class = std::void_t<std::enable_if_t<std::is_same<double, std::decay_t<Kernel> >::value > >
+        >
+            inline auto Call(
+                Kernel&&,
+                FunctionDecl&&,
+                Args&&... args)
+        {
+            using kernel_ty = std::decay_t<FunctionDecl>;
+            using func_ty = typename kernel_ty::template Build<double>;
+            return func_ty{}.Evaluate(args...);
+        }
+
 
         using Frontend::Phi;
         using Frontend::Exp;
