@@ -196,6 +196,18 @@ struct RemapUnique : OperatorTransform {
             return candidate;
         }
     }
+    void Debug()const
+    {
+        for (auto const& p : ops_)
+        {
+            std::cout << std::get<0>(p.first);
+            for (auto const& x : std::get<1>(p.first))
+            {
+                std::cout << "," << x;
+            }
+            std::cout << "\n";
+        }
+    }
 private:
     std::string prefix_;
     std::map<

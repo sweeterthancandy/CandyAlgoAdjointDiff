@@ -551,7 +551,7 @@ std::shared_ptr<Operator> ExpandCall(std::shared_ptr<Operator> const& head)
             auto candidate = ptr->Clone(shared_from_this());
             if (auto as_call = std::dynamic_pointer_cast<Call>(candidate))
             {
-                auto name = "__tmp_call_" + std::to_string(names_.size());
+                auto name = "__tmp_call_" + std::to_string((size_t)as_call.get());
                 names_.push_back(name);
                 auto exo = std::make_shared<EndgenousSymbol>(name, candidate);
                 return exo;
@@ -937,6 +937,10 @@ namespace Cady
                 {
                     std::cout << "return " << return_stmt->value_->ToString() << "\n";
                 }
+                else if (auto call_stmt = std::dynamic_pointer_cast<CallStatement>(stmt))
+                {
+                    std::cout << "CALL " << call_stmt->function_name_ << "(...)\n";
+                }
                 else
                 {
                     std::string();
@@ -1079,7 +1083,8 @@ namespace Cady
                 else if (auto call_stmt = std::dynamic_pointer_cast<CallStatement>(stmt))
                 {
                     do_indent();
-                    ostr << "auto call_result = " << call_stmt->function_name_ << "(";
+                    std::string call_result_token = "__call_result_" + std::to_string((std::size_t)call_stmt.get());
+                    ostr << "auto " << call_result_token << " = " << call_stmt->function_name_ << "(";
                     for (size_t idx = 0; idx != call_stmt->arg_list_.size(); ++idx)
                     {
                         ostr << (idx == 0 ? "" : ", ") << call_stmt->arg_list_[idx]->ToString();
@@ -1089,7 +1094,7 @@ namespace Cady
                     {
                         auto const& lvalue = call_stmt->result_list_[idx];
                         do_indent();
-                        ostr << "const double " << lvalue->ToString() << " = call_result[" << idx << "]\n";
+                        ostr << "const double " << lvalue->ToString() << " = " << call_result_token << "[" << idx << "];\n";
                     }
                 }
                 else
@@ -1113,8 +1118,14 @@ struct InstructionLinearizer : ControlBlockVisitor
 {
     void AcceptInstruction(const std::shared_ptr<const Instruction>& instr) override
     {
+
         if (auto as_lvalue_assign = std::dynamic_pointer_cast<const InstructionDeclareVariable>(instr))
         {
+            if (seen_.count(instr))
+            {
+                // short circute
+                return;
+            }
             auto make_rvalue = [](std::shared_ptr<Operator> const& op)->std::shared_ptr<ProgramCode::RValue>
             {
                 if (auto as_sym = std::dynamic_pointer_cast<const Symbol>(op))
@@ -1143,8 +1154,6 @@ struct InstructionLinearizer : ControlBlockVisitor
             }
             else
             {
-                
-
                 auto op = as_lvalue_assign->as_operator_();
                 if (auto as_binary = std::dynamic_pointer_cast<const BinaryOperator>(op))
                 {
@@ -1255,6 +1264,8 @@ struct InstructionLinearizer : ControlBlockVisitor
         {
             throw std::domain_error("unknown type");
         }
+
+        seen_.insert(instr);
     }
     void AcceptIf(const std::shared_ptr<const IfBlock>& if_block)
     {
@@ -1273,6 +1284,7 @@ struct InstructionLinearizer : ControlBlockVisitor
     {
 
     }
+    std::unordered_set<std::shared_ptr<const Instruction> > seen_;
     std::vector<std::shared_ptr<ProgramCode::Statement> > stmts_;
 };
 
@@ -1792,47 +1804,42 @@ auto __MyLogKFDivStd(const double K, const double F, const double std)
 }
 auto __black(const double t, const double T, const double r, const double S, const double K, const double vol)
 {
-    const double __symbol_8 = r;
-    const double __symbol_32 = -__symbol_8;
+    const double __symbol_9 = r;
+    const double __symbol_28 = -__symbol_9;
     const double __symbol_2 = T;
-    const double __symbol_33 = __symbol_32 * __symbol_2;
-    const double __symbol_34 = std::exp(__symbol_33);
-    const double __statement_0 = __symbol_34;
-    const double __symbol_11 = S;
-    const double __symbol_9 = __symbol_8 * __symbol_2;
-    const double __symbol_10 = std::exp(__symbol_9);
-    const double __symbol_12 = __symbol_11 * __symbol_10;
-    const double __statement_1 = __symbol_12;
+    const double __symbol_29 = __symbol_28 * __symbol_2;
+    const double __symbol_30 = std::exp(__symbol_29);
+    const double __statement_0 = __symbol_30;
+    const double __symbol_12 = S;
+    const double __symbol_10 = __symbol_9 * __symbol_2;
+    const double __symbol_11 = std::exp(__symbol_10);
+    const double __symbol_13 = __symbol_12 * __symbol_11;
+    const double __statement_1 = __symbol_13;
+    const double __symbol_8 = K;
     const double __symbol_4 = vol;
     const double __symbol_3 = std::pow(__symbol_2, 0.500000);
     const double __symbol_5 = __symbol_4 * __symbol_3;
     const double __statement_2 = __symbol_5;
-    auto call_result = __MyLogKFDivStd(K, __statement_1, __statement_2);
-    const double __tmp_call_1 = call_result[0];
-        const double d_K = call_result[1];
-    const double d___statement_1 = call_result[2];
-    const double d___statement_2 = call_result[3];
-        const double __symbol_23 = __tmp_call_1;
-    const double __statement_3 = __symbol_23;
+    auto __call_result_22070196 = __MyLogKFDivStd(__symbol_8, __statement_1, __statement_2);
+    const double __symbol_15 = __call_result_22070196[0];
+    const double d___symbol_8 = __call_result_22070196[1];
+    const double d___statement_1 = __call_result_22070196[2];
+    const double d___statement_2 = __call_result_22070196[3];
+    const double __statement_3 = __symbol_15;
     const double __symbol_7 = 0.500000 * __statement_2;
-    const double __symbol_25 = __statement_3 + __symbol_7;
-    const double __statement_4 = __symbol_25;
-    const double __symbol_27 = std::erfc(-(__statement_4) / std::sqrt(2)) / 2;
-    const double __statement_6 = __symbol_27;
-    const double __symbol_30 = __statement_1 * __statement_6;
-    const double __symbol_21 = K;
-
-    const double __tmp_call_0 = call_result[0];
-        const double __symbol_13 = __tmp_call_0;
-    const double __symbol_15 = __statement_3 + __symbol_7;
-    const double __symbol_17 = __statement_4 - __statement_2;
-    const double __statement_5 = __symbol_17;
-    const double __symbol_19 = std::erfc(-(__statement_5) / std::sqrt(2)) / 2;
-    const double __statement_7 = __symbol_19;
-    const double __symbol_22 = __symbol_21 * __statement_7;
-    const double __symbol_31 = __symbol_30 - __symbol_22;
-    const double __symbol_36 = __statement_0 * __symbol_31;
-    const double __statement_8 = __symbol_36;
+    const double __symbol_17 = __statement_3 + __symbol_7;
+    const double __statement_4 = __symbol_17;
+    const double __symbol_24 = std::erfc(-(__statement_4) / std::sqrt(2)) / 2;
+    const double __statement_6 = __symbol_24;
+    const double __symbol_26 = __statement_1 * __statement_6;
+    const double __symbol_19 = __statement_4 - __statement_2;
+    const double __statement_5 = __symbol_19;
+    const double __symbol_21 = std::erfc(-(__statement_5) / std::sqrt(2)) / 2;
+    const double __statement_7 = __symbol_21;
+    const double __symbol_23 = __symbol_8 * __statement_7;
+    const double __symbol_27 = __symbol_26 - __symbol_23;
+    const double __symbol_32 = __statement_0 * __symbol_27;
+    const double __statement_8 = __symbol_32;
     const double result = __statement_8;
     const double result_d_t = 0.000000;
     const double __adj53 = __symbol_2;
@@ -1845,7 +1852,7 @@ auto __black(const double t, const double T, const double r, const double S, con
     const double __adj27 = -__adj26;
     const double __adj28 = std::exp(__adj27);
     const double __adj29 = __adj28 / 2.506628;
-    const double __adj22 = __symbol_21;
+    const double __adj22 = __symbol_8;
     const double __adj7 = __statement_0;
     const double __adj21 = -1.000000 * __adj7;
     const double __adj23 = __adj22 * __adj21;
@@ -1868,10 +1875,10 @@ auto __black(const double t, const double T, const double r, const double S, con
     const double __adj49 = __adj48 + __adj45;
     const double __adj51 = __adj50 * __adj49;
     const double __adj56 = __adj55 * __adj51;
-    const double __adj42 = __symbol_8;
-    const double __adj39 = __symbol_9;
+    const double __adj42 = __symbol_9;
+    const double __adj39 = __symbol_10;
     const double __adj40 = std::exp(__adj39);
-    const double __adj37 = __symbol_11;
+    const double __adj37 = __symbol_12;
     const double __adj34 = __statement_6;
     const double __adj35 = __adj34 * __adj7;
     const double __adj32 = d___statement_1;
@@ -1881,10 +1888,10 @@ auto __black(const double t, const double T, const double r, const double S, con
     const double __adj41 = __adj40 * __adj38;
     const double __adj43 = __adj42 * __adj41;
     const double __adj57 = __adj56 + __adj43;
-    const double __adj5 = __symbol_32;
-    const double __adj2 = __symbol_33;
+    const double __adj5 = __symbol_28;
+    const double __adj2 = __symbol_29;
     const double __adj3 = std::exp(__adj2);
-    const double __adj1 = __symbol_31;
+    const double __adj1 = __symbol_27;
     const double __adj4 = __adj3 * __adj1;
     const double __adj6 = __adj5 * __adj4;
     const double result_d_T = __adj57 + __adj6;
@@ -1893,11 +1900,11 @@ auto __black(const double t, const double T, const double r, const double S, con
     const double __adj58 = __adj53 * __adj4;
     const double __adj61 = __adj60 * __adj58;
     const double result_d_r = __adj62 + __adj61;
-    const double __adj63 = __symbol_10;
+    const double __adj63 = __symbol_11;
     const double result_d_S = __adj63 * __adj36;
     const double __adj66 = __statement_7;
     const double __adj67 = __adj66 * __adj21;
-    const double __adj64 = d_K;
+    const double __adj64 = d___symbol_8;
     const double __adj65 = __adj64 * __adj31;
     const double result_d_K = __adj67 + __adj65;
     const double __adj68 = __symbol_3;
@@ -1960,8 +1967,10 @@ int main()
     auto three_address_transform = std::make_shared<Transform::RemapUnique>();
     auto three_address_tree = head->Clone(three_address_transform);
 
-    auto call_expanded_head = ExpandCall(three_address_tree);
+    three_address_transform->Debug();
 
+    //auto call_expanded_head = ExpandCall(three_address_tree);
+    auto call_expanded_head = three_address_tree;
 
     auto block = BuildRecursiveEx(call_expanded_head);
 
@@ -1982,7 +1991,7 @@ int main()
     M->Accept(*l);
 
     auto ff = std::make_shared<ProgramCode::Function>("black", arguments, l->stmts_);
-    //ff->DebugPrint();
+    ff->DebugPrint();
 
     ProgramCode::CodeWriter{}.EmitCode(std::cout, ff);
 

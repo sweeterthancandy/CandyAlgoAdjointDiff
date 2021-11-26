@@ -1225,8 +1225,7 @@ struct Call : Operator
         throw std::domain_error("not a true expression");
     }
     virtual void EmitCode(std::ostream& ss)const override {
-        ss << " // call proxy\n";
-        //throw std::domain_error("not a true expression");
+        throw std::domain_error("not a true expression");
     }
     template<class... Args>
     static std::shared_ptr<Call> Make(std::string const& name, Args&&... args)
@@ -1238,7 +1237,8 @@ struct Call : Operator
         std::vector<std::shared_ptr<Operator> > mapped_args;
         for (auto const& arg : Children())
         {
-            mapped_args.push_back(arg->Clone(opt_trans));
+            // mapped_args.push_back(arg->Clone(opt_trans));
+            mapped_args.push_back(opt_trans->Apply(arg));
         }
         return Make(name_, mapped_args);
     }
@@ -1246,6 +1246,8 @@ struct Call : Operator
         throw std::domain_error("not a true expression");
     }
     std::string const& FunctionName()const { return name_; }
+
+    virtual std::vector<std::string> HiddenArguments()const override { return { FunctionName() }; }
 private:
     std::string name_;
 };
