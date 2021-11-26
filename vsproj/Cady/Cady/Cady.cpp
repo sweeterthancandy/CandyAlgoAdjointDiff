@@ -11,6 +11,7 @@
 #include "Cady/CodeWriter.h"
 #include "Cady/CpuTimer.h"
 
+#include <array>
 #include <map>
 #include <functional>
 
@@ -805,6 +806,17 @@ namespace Cady
             std::shared_ptr<RValue> value_;
         };
 
+        struct ReturnArrayStatement : public Statement
+        {
+            explicit ReturnArrayStatement(
+                std::vector<std::shared_ptr<RValue> > const& value_list)
+                : value_list_{ value_list }
+            {
+            }
+
+            std::vector<std::shared_ptr<RValue> > value_list_;
+        };
+
 
         struct Function
         {
@@ -983,6 +995,16 @@ namespace Cady
                     do_indent();
                     ostr << "return " << return_stmt->value_->ToString() << ";\n";
                 }
+                else if (auto return_stmt = std::dynamic_pointer_cast<ReturnArrayStatement>(stmt))
+                {
+                    do_indent();
+                    ostr << "return std::array<double, " << return_stmt->value_list_.size() << ">{";
+                    for (size_t idx = 0; idx != return_stmt->value_list_.size(); ++idx)
+                    {
+                        ostr << (idx == 0 ? "" : ", ") << return_stmt->value_list_[idx]->ToString();
+                    }
+                    ostr << "};\n";
+                }
                 else
                 {
                     std::string();
@@ -1108,6 +1130,15 @@ struct InstructionLinearizer : ControlBlockVisitor
                         ProgramCode::OpCode::OP_PHI,
                         std::make_shared<ProgramCode::LValue>(as_lvalue_assign->LValueName()),
                         make_rvalue(as_phi->At(0)));
+
+                    stmts_.push_back(two_address);
+                }
+                else if (auto as_constant = std::dynamic_pointer_cast<const Constant>(op))
+                {
+                    auto two_address = std::make_shared<ProgramCode::TwoAddressCode>(
+                        ProgramCode::OpCode::OP_ASSIGN,
+                        std::make_shared<ProgramCode::LValue>(as_lvalue_assign->LValueName()),
+                        std::make_shared<ProgramCode::DoubleConstant>(as_constant->Value()));
 
                     stmts_.push_back(two_address);
                 }
@@ -1267,14 +1298,18 @@ std::shared_ptr<ProgramCode::Statement> CloneStmtWithDiffs(
         auto three_address_transform = std::make_shared<Transform::RemapUnique>("__adj");
 
         std::unordered_set<std::string> three_addr_seen;
+#if 0
         for (auto const& p : context.alloc_map_list.back())
         {
             three_addr_seen.insert(p.first);
         }
+#endif
 
         auto AADIB = std::make_shared<InstructionBlock>();
 
-        std::vector<std::string> diff_output;
+        std::vector<std::shared_ptr<RValue> > output_list;
+        output_list.push_back(return_stmt->value_);
+
 
         for (auto const& exo : context.exo_names)
         {
@@ -1300,17 +1335,17 @@ std::shared_ptr<ProgramCode::Statement> CloneStmtWithDiffs(
             }
 
             std::string aux_name = "result_" + d_sym;
-            diff_output.push_back(aux_name);
+            output_list.push_back(std::make_shared<LValue>(aux_name));
             AADIB->Add(std::make_shared<InstructionDeclareVariable>(aux_name, d_expr_three_address));
 
 
         }
 
-        auto l = std::make_shared< InstructionLinearizer>();
+        auto l = std::make_shared<InstructionLinearizer>();
         AADIB->Accept(*l);
 
         auto stmts_with_aad = l->stmts_;
-        stmts_with_aad.push_back(return_stmt);
+        stmts_with_aad.push_back(std::make_shared<ReturnArrayStatement>(output_list));
         return std::make_shared<StatementList>(stmts_with_aad);
     }
     else
@@ -1342,7 +1377,7 @@ std::shared_ptr<ProgramCode::Function> CloneWithDiffs(std::shared_ptr<ProgramCod
 }
 
 
-double black(const double t, const double T, const double r, const double S, const double K, const double vol)
+auto black(const double t, const double T, const double r, const double S, const double K, const double vol)
 {
     const double __symbol_2 = T;
     const double __symbol_57 = t;
@@ -1385,6 +1420,7 @@ double black(const double t, const double T, const double r, const double S, con
         const double __symbol_55 = __statement_10 * __symbol_53;
         const double __statement_18 = __symbol_55;
         const double result = __statement_18;
+        const double result_d_t = 0.000000;
         const double __adj64 = __symbol_2;
         const double __adj65 = std::pow(__adj64, -0.500000);
         const double __adj66 = 0.500000 * __adj65;
@@ -1463,7 +1499,7 @@ double black(const double t, const double T, const double r, const double S, con
         const double result_d_K = __adj78 + __adj76;
         const double __adj79 = __symbol_3;
         const double result_d_vol = __adj79 * __adj60;
-        return result;
+        return std::array<double, 7>{result, result_d_t, result_d_T, result_d_r, result_d_S, result_d_K, result_d_vol};
     }
     else {
         const double __symbol_9 = r;
@@ -1501,6 +1537,7 @@ double black(const double t, const double T, const double r, const double S, con
         const double __symbol_34 = __statement_1 * __symbol_29;
         const double __statement_9 = __symbol_34;
         const double result = __statement_9;
+        const double result_d_t = 0.000000;
         const double __adj64 = __symbol_2;
         const double __adj65 = std::pow(__adj64, -0.500000);
         const double __adj66 = 0.500000 * __adj65;
@@ -1579,7 +1616,7 @@ double black(const double t, const double T, const double r, const double S, con
         const double result_d_K = __adj78 + __adj76;
         const double __adj79 = __symbol_3;
         const double result_d_vol = __adj79 * __adj60;
-        return result;
+        return std::array<double, 7>{result, result_d_t, result_d_T, result_d_r, result_d_S, result_d_K, result_d_vol};
     }
 }
 
@@ -1597,7 +1634,27 @@ int main()
     double K = 100;
     double vol = 0.2;
     std::cout << kernel_ty::Build<double>{}.Evaluate(t, T, r, S, K, vol) << "\n";
-    std::cout << black(t, T, r, S, K, vol) << "\n";
+    auto aad_result = black(t, T, r, S, K, vol);
+
+
+
+    std::vector<double> X{ t, T, r, S, K, vol };
+    std::cout << kernel_ty::Build<double>{}.EvaluateVec(X) << "\n";
+    std::cout << "numeric=" << kernel_ty::Build<double>{}.EvaluateVec(X) << ", AAD=" << aad_result[0] << "\n";
+    for (size_t idx = 0; idx != X.size(); ++idx)
+    {
+        const double epsilon = 1e-8;
+        const double old_value = X[idx];
+        X[idx] = old_value - epsilon/2;
+        auto left = kernel_ty::Build<double>{}.EvaluateVec(X);
+        X[idx] = old_value + epsilon / 2;
+        auto right = kernel_ty::Build<double>{}.EvaluateVec(X);
+
+        auto numeric = (right - left) / epsilon;
+
+        std::cout << "numeric=" << numeric << ", AAD=" << aad_result[idx+1] << "\n";
+    }
+
 
     auto ad_kernel = kernel_ty::Build<DoubleKernel>();
 
