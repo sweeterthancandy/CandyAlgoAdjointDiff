@@ -66,9 +66,16 @@ struct BlackScholesCallOptionTest {
             return If(
                 special_condition,
                 [&]() {
-                    Double tmp = Max(S - K, special_condition);
-                    //Double tmp = Call(MyMax{}, S - K, special_condition);
-                    return tmp;
+                    Double df = Exp(-r * T);
+                    Double F = S * Exp(r * T);
+                    Double std = vol * Pow(T, 0.5);
+                    Double d = Log(F / K) / std;
+                    Double d1 = d + 0.5 * std;
+                    Double d2 = d1 - std;
+                    Double nd1 = Phi(d1);
+                    Double nd2 = Phi(d2);
+                    Double c = df * (F * nd1 - K * nd2);
+                    return c;
                 },
                 [&]()
                 {
@@ -551,6 +558,7 @@ namespace Cady
         {
             virtual ~RValue() = default;
             virtual std::string ToString()const = 0;
+            virtual std::shared_ptr<Operator> to_operator()const = 0;
         };
 
         struct DoubleConstant : public RValue
@@ -558,6 +566,10 @@ namespace Cady
             explicit DoubleConstant(double value) :value_{ value } {}
             double Value()const { return value_; }
             virtual std::string ToString()const override { return std::to_string(value_); }
+            virtual std::shared_ptr<Operator> to_operator()const override
+            {
+                return std::make_shared<Constant>(value_);
+            }
         private:
             double value_;
         };
@@ -571,6 +583,10 @@ namespace Cady
             std::string Name()const { return name_; }
             virtual std::string ToString()const override {
                 return Name();
+            }
+            virtual std::shared_ptr<Operator> to_operator()const override
+            {
+                return std::make_shared<ExogenousSymbol>(name_);
             }
         private:
             std::string name_;
@@ -656,6 +672,57 @@ namespace Cady
                 , r_param_{ r_param }
             {}
 
+            std::shared_ptr<Operator> to_operator()const
+            {
+                switch (op_)
+                {
+                case OP_ADD:
+                    return std::make_shared<BinaryOperator>(
+                        BinaryOperatorKind::OP_ADD,
+                        l_param_->to_operator(),
+                        r_param_->to_operator());
+                    break;
+                case OP_SUB:
+                    return std::make_shared<BinaryOperator>(
+                        BinaryOperatorKind::OP_SUB,
+                        l_param_->to_operator(),
+                        r_param_->to_operator());
+                    break;
+                case OP_MUL:
+                    return std::make_shared<BinaryOperator>(
+                        BinaryOperatorKind::OP_MUL,
+                        l_param_->to_operator(),
+                        r_param_->to_operator());
+                    break;
+                case OP_DIV:
+                    return std::make_shared<BinaryOperator>(
+                        BinaryOperatorKind::OP_DIV,
+                        l_param_->to_operator(),
+                        r_param_->to_operator());
+                    break;
+                case OP_POW:
+                    return std::make_shared<BinaryOperator>(
+                        BinaryOperatorKind::OP_POW,
+                        l_param_->to_operator(),
+                        r_param_->to_operator());
+                    break;
+                case OP_MIN:
+                    return std::make_shared<BinaryOperator>(
+                        BinaryOperatorKind::OP_MIN,
+                        l_param_->to_operator(),
+                        r_param_->to_operator());
+                    break;
+                case OP_MAX:
+                    return std::make_shared<BinaryOperator>(
+                        BinaryOperatorKind::OP_MAX,
+                        l_param_->to_operator(),
+                        r_param_->to_operator());
+                    break;
+                default:
+                    throw std::domain_error("TODO");
+                }
+            }
+
             OpCode op_;
             std::shared_ptr<const LValue> name_;
             std::shared_ptr<const RValue> l_param_;
@@ -674,6 +741,31 @@ namespace Cady
                 rvalue
             }, param_{ param }
             {}
+
+            std::shared_ptr<Operator> to_operator()const
+            {
+                switch (op_)
+                {
+                case OP_USUB:
+                    return std::make_shared<UnaryOperator>(
+                        UnaryOperatorKind::UOP_USUB,
+                        param_->to_operator());
+                    break;
+                case OP_PHI:
+                    return std::make_shared<Phi>(
+                        param_->to_operator());
+                    break;
+                case OP_EXP:
+                    return std::make_shared<Exp>(
+                        param_->to_operator());
+                    break;
+                case OP_LOG:
+                    return std::make_shared<Log>(
+                        param_->to_operator());
+                    break;
+                }
+            }
+
             OpCode op_;
             std::shared_ptr<const LValue> rvalue_;
             std::shared_ptr<const RValue> param_;
@@ -1061,83 +1153,49 @@ struct InstructionLinearizer : ControlBlockVisitor
 
 
 
-
-
-
-
-int main()
+double black(const double t, const double T, const double r, const double S, const double K, const double vol)
 {
-    //test_bs();
-    
-    using kernel_ty = BlackScholesCallOptionTest;
-    auto ad_kernel = kernel_ty::Build<DoubleKernel>();
-
-    auto arguments = ad_kernel.Arguments();
-
-    std::vector<DoubleKernel> symbolc_arguments;
-    for (auto const& arg : arguments)
-    {
-        symbolc_arguments.push_back(DoubleKernel::BuildFromExo(arg));
-    }
-    auto function_root = ad_kernel.EvaluateVec(symbolc_arguments);
-
-    auto head = function_root.as_operator_();
-
-    auto three_address_transform = std::make_shared<Transform::RemapUnique>();
-    auto three_address_tree = head->Clone(three_address_transform);
-
-    auto call_expanded_head = ExpandCall(three_address_tree);
-
-
-    auto block = BuildRecursiveEx(call_expanded_head);
-
-    auto f = std::make_shared<Function>(block);
-    for (auto const& arg : arguments)
-    {
-        f->AddArg(std::make_shared<FunctionArgument>(FAK_Double, arg));
-    }
-
-    f->GetModule()->EmitCode(std::cout);
-
-    auto M = f->GetModule();
-
-    auto v = std::make_shared< DebugControlBlockVisitor>();
-    M->Accept(*v);
-
-    auto l = std::make_shared< InstructionLinearizer>();
-    M->Accept(*l);
-
-    auto ff = std::make_shared<ProgramCode::Function>("black", arguments, l->stmts_);
-    ff->DebugPrint();
-
-    ProgramCode::CodeWriter{}.EmitCode(std::cout, ff);
-}
-
-
-double black(double t, double T, double r, double S, double K, double vol)
-{
-    const double __symbol_37 = t;
     const double __symbol_2 = T;
-    const double __symbol_38 = __symbol_37 * __symbol_2;
-    const double __symbol_9 = r;
-    const double __symbol_12 = S;
-    const double __symbol_36 = __symbol_9 * __symbol_12;
-    const double __symbol_39 = __symbol_38 - __symbol_36;
-    const double __statement_0 = __symbol_39;
+    const double __symbol_57 = t;
+    const double __symbol_58 = __symbol_2 - __symbol_57;
+    const double __statement_0 = __symbol_58;
     const double result = __statement_0;
     if (!!result) {
-        const double __symbol_37 = t;
-        const double __symbol_2 = T;
-        const double __symbol_38 = __symbol_37 * __symbol_2;
         const double __symbol_9 = r;
+        const double __symbol_30 = -__symbol_9;
+        const double __symbol_2 = T;
+        const double __symbol_31 = __symbol_30 * __symbol_2;
+        const double __symbol_32 = std::exp(__symbol_31);
+        const double __statement_10 = __symbol_32;
         const double __symbol_12 = S;
-        const double __symbol_36 = __symbol_9 * __symbol_12;
-        const double __symbol_39 = __symbol_38 - __symbol_36;
-        const double __statement_0 = __symbol_39;
+        const double __symbol_10 = __symbol_9 * __symbol_2;
+        const double __symbol_11 = std::exp(__symbol_10);
+        const double __symbol_13 = __symbol_12 * __symbol_11;
+        const double __statement_11 = __symbol_13;
         const double __symbol_8 = K;
-        const double __symbol_40 = 0.0;
-        const double __statement_10 = __symbol_40;
-        const double result = __statement_10;
+        const double __symbol_39 = __statement_11 / __symbol_8;
+        const double __symbol_40 = std::log(__symbol_39);
+        const double __symbol_4 = vol;
+        const double __symbol_3 = std::pow(__symbol_2, 0.500000);
+        const double __symbol_5 = __symbol_4 * __symbol_3;
+        const double __statement_12 = __symbol_5;
+        const double __symbol_41 = __symbol_40 / __statement_12;
+        const double __statement_13 = __symbol_41;
+        const double __symbol_37 = 0.500000 * __statement_12;
+        const double __symbol_43 = __statement_13 + __symbol_37;
+        const double __statement_14 = __symbol_43;
+        const double __symbol_50 = std::erfc(-(__statement_14) / std::sqrt(2)) / 2;
+        const double __statement_16 = __symbol_50;
+        const double __symbol_52 = __statement_11 * __statement_16;
+        const double __symbol_45 = __statement_14 - __statement_12;
+        const double __statement_15 = __symbol_45;
+        const double __symbol_47 = std::erfc(-(__statement_15) / std::sqrt(2)) / 2;
+        const double __statement_17 = __symbol_47;
+        const double __symbol_49 = __symbol_8 * __statement_17;
+        const double __symbol_53 = __symbol_52 - __symbol_49;
+        const double __symbol_55 = __statement_10 * __symbol_53;
+        const double __statement_18 = __symbol_55;
+        const double result = __statement_18;
         return result;
     }
     else {
@@ -1179,3 +1237,64 @@ double black(double t, double T, double r, double S, double K, double vol)
         return result;
     }
 }
+
+
+
+int main()
+{
+    //test_bs();
+    
+    using kernel_ty = BlackScholesCallOptionTest;
+
+    double t = 0.0;
+    double T = 2.0;
+    double r = 0.00;
+    double S = 80;
+    double K = 100;
+    double vol = 0.2;
+    std::cout << kernel_ty::Build<double>{}.Evaluate(t, T, r, S, K, vol) << "\n";
+    std::cout << black(t, T, r, S, K, vol) << "\n";
+
+    auto ad_kernel = kernel_ty::Build<DoubleKernel>();
+
+    auto arguments = ad_kernel.Arguments();
+
+    std::vector<DoubleKernel> symbolc_arguments;
+    for (auto const& arg : arguments)
+    {
+        symbolc_arguments.push_back(DoubleKernel::BuildFromExo(arg));
+    }
+    auto function_root = ad_kernel.EvaluateVec(symbolc_arguments);
+
+    auto head = function_root.as_operator_();
+
+    auto three_address_transform = std::make_shared<Transform::RemapUnique>();
+    auto three_address_tree = head->Clone(three_address_transform);
+
+    auto call_expanded_head = ExpandCall(three_address_tree);
+
+
+    auto block = BuildRecursiveEx(call_expanded_head);
+
+    auto f = std::make_shared<Function>(block);
+    for (auto const& arg : arguments)
+    {
+        f->AddArg(std::make_shared<FunctionArgument>(FAK_Double, arg));
+    }
+
+    //f->GetModule()->EmitCode(std::cout);
+
+    auto M = f->GetModule();
+
+    auto v = std::make_shared< DebugControlBlockVisitor>();
+    //M->Accept(*v);
+
+    auto l = std::make_shared< InstructionLinearizer>();
+    M->Accept(*l);
+
+    auto ff = std::make_shared<ProgramCode::Function>("black", arguments, l->stmts_);
+    //ff->DebugPrint();
+
+    ProgramCode::CodeWriter{}.EmitCode(std::cout, ff);
+}
+
