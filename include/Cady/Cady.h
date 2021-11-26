@@ -794,7 +794,7 @@ struct BinaryOperator : Operator{
                                         )
                                 );
                         }
-
+#if 0
                         case OP_MIN:
                         {
                             return Min(
@@ -809,6 +809,10 @@ struct BinaryOperator : Operator{
                                 RParam()->Diff(symbol)
                             );
                         }
+#endif
+                        case OP_MIN:
+                        case OP_MAX:
+                            throw std::domain_error("cant diff min or max atm");
                 }
                 std::abort();
         }

@@ -17,6 +17,21 @@ namespace Cady {
             , args_{ args }
             , diffs_{ diffs }
         {}
+        static std::shared_ptr< ImpliedMatrixFunction> MakeFromOperator(size_t id, std::shared_ptr<Operator> const& expr, std::string const& lvalue = "dummy")
+        {
+            auto deps = expr->DepthFirstAnySymbolicDependencyOrThisNoRecurse();
+            std::vector<std::shared_ptr<Symbol> > input_sym(
+                deps.Set.begin(), deps.Set.end());
+            std::vector<std::shared_ptr<Operator> > diff_vec;
+            for (auto const& sym : input_sym) {
+                Transform::FoldZero fold_zero;
+
+                auto diff = fold_zero.Fold(expr->Diff(sym->Name()));
+                diff_vec.push_back(diff);
+            }
+            return std::make_shared< ImpliedMatrixFunction>(id, lvalue, input_sym, diff_vec);
+
+        }
         static std::shared_ptr< ImpliedMatrixFunction> Make(size_t id, std::shared_ptr<Instruction> const& instr)
         {
             if (auto decl_instr = std::dynamic_pointer_cast<InstructionDeclareVariable>(instr))
@@ -123,7 +138,18 @@ namespace Cady {
 
         }
 
-
+        void PrintDebug()const
+        {
+            std::cout << "matrix function " << id_ << "\n";
+            for (size_t idx = 0; idx != args_.size(); ++idx)
+            {
+                std::cout << (idx == 0 ? "" : ", ");
+                args_[idx]->EmitCode(std::cout);
+                std::cout << " => ";
+                diffs_[idx]->EmitCode(std::cout);
+                std::cout << "\n";
+            }
+        }
     private:
         size_t id_;
         std::string output_;

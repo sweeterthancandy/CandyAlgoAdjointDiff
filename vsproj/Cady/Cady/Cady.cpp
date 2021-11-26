@@ -681,43 +681,36 @@ namespace Cady
                         BinaryOperatorKind::OP_ADD,
                         l_param_->to_operator(),
                         r_param_->to_operator());
-                    break;
                 case OP_SUB:
                     return std::make_shared<BinaryOperator>(
                         BinaryOperatorKind::OP_SUB,
                         l_param_->to_operator(),
                         r_param_->to_operator());
-                    break;
                 case OP_MUL:
                     return std::make_shared<BinaryOperator>(
                         BinaryOperatorKind::OP_MUL,
                         l_param_->to_operator(),
                         r_param_->to_operator());
-                    break;
                 case OP_DIV:
                     return std::make_shared<BinaryOperator>(
                         BinaryOperatorKind::OP_DIV,
                         l_param_->to_operator(),
                         r_param_->to_operator());
-                    break;
                 case OP_POW:
                     return std::make_shared<BinaryOperator>(
                         BinaryOperatorKind::OP_POW,
                         l_param_->to_operator(),
                         r_param_->to_operator());
-                    break;
                 case OP_MIN:
                     return std::make_shared<BinaryOperator>(
                         BinaryOperatorKind::OP_MIN,
                         l_param_->to_operator(),
                         r_param_->to_operator());
-                    break;
                 case OP_MAX:
                     return std::make_shared<BinaryOperator>(
                         BinaryOperatorKind::OP_MAX,
                         l_param_->to_operator(),
                         r_param_->to_operator());
-                    break;
                 default:
                     throw std::domain_error("TODO");
                 }
@@ -750,19 +743,19 @@ namespace Cady
                     return std::make_shared<UnaryOperator>(
                         UnaryOperatorKind::UOP_USUB,
                         param_->to_operator());
-                    break;
                 case OP_PHI:
                     return std::make_shared<Phi>(
                         param_->to_operator());
-                    break;
                 case OP_EXP:
                     return std::make_shared<Exp>(
                         param_->to_operator());
-                    break;
                 case OP_LOG:
                     return std::make_shared<Log>(
                         param_->to_operator());
-                    break;
+                case OP_ASSIGN:
+                    return param_->to_operator();
+                default:
+                    throw std::domain_error("TODO");
                 }
             }
 
@@ -877,6 +870,7 @@ namespace Cady
             auto const& Name()const { return name_; }
             auto const& Args()const { return args_; }
             auto const& Statements()const { return stmts_;  }
+            auto& Statements(){ return stmts_; }
         private:
             std::string name_;
             std::vector<std::string> args_;
@@ -995,6 +989,8 @@ namespace Cady
                 }
             }
         };
+
+        
 
     } // end namespace ProgramCode
 
@@ -1152,6 +1148,199 @@ struct InstructionLinearizer : ControlBlockVisitor
 };
 
 
+struct ExecutionContext
+{
+    std::vector<std::string> exo_names;
+    std::vector<std::unordered_map<std::string, size_t> > alloc_map_list;
+    std::vector<std::shared_ptr<ImpliedMatrixFunction> > jacobian_list;
+};
+
+
+std::shared_ptr<ProgramCode::Statement> CloneStmtWithDiffs(
+    ExecutionContext& context,
+    std::shared_ptr<ProgramCode::Statement> const& stmt)
+{
+
+    using namespace ProgramCode;
+
+    if (auto stmts = std::dynamic_pointer_cast<StatementList>(stmt))
+    {
+        std::vector<std::shared_ptr<Statement> > new_stmts;
+        for (auto const& child_stmt : *stmts)
+        {
+            auto result = CloneStmtWithDiffs(
+                context,
+                child_stmt);
+            new_stmts.push_back(result);
+            
+        }
+        return std::make_shared<StatementList>(std::vector<std::shared_ptr<Statement> >{new_stmts});
+    }
+    else if (auto three_addr = std::dynamic_pointer_cast<ThreeAddressCode>(stmt))
+    {
+        std::string lvalue = three_addr->name_->ToString();
+        auto alloc_map = context.alloc_map_list.back();
+        if (alloc_map.count(lvalue) == 0)
+        {
+            auto expr = three_addr->to_operator();
+
+
+            auto slot = alloc_map.size();
+            alloc_map[lvalue] = slot;
+            
+            auto matrix_func = ImpliedMatrixFunction::MakeFromOperator(context.jacobian_list.size(), expr);
+            context.alloc_map_list.push_back(alloc_map);
+            context.jacobian_list.push_back(matrix_func);
+        }
+        return stmt;
+    }
+    else if (auto two_addr = std::dynamic_pointer_cast<TwoAddressCode>(stmt))
+    {
+        auto lvalue = two_addr->rvalue_->ToString();
+        auto alloc_map = context.alloc_map_list.back();
+        if (alloc_map.count(lvalue) == 0)
+        {
+            auto expr = two_addr->to_operator();
+            auto slot = alloc_map.size();
+            alloc_map[lvalue] = slot;
+            if (alloc_map.size() != slot + 1)
+            {
+                std::string();
+            }
+            
+
+            auto matrix_func = ImpliedMatrixFunction::MakeFromOperator(context.jacobian_list.size(), expr);
+            context.alloc_map_list.push_back(alloc_map); 
+            context.jacobian_list.push_back(matrix_func);
+        }
+        return stmt;
+    }
+    else if (auto if_stmt = std::dynamic_pointer_cast<IfStatement>(stmt))
+    {
+        ExecutionContext true_context(context);
+        ExecutionContext false_context(context);
+        auto true_stmt = CloneStmtWithDiffs(true_context, if_stmt->if_true_);
+        auto false_stmt = CloneStmtWithDiffs(true_context, if_stmt->if_false_);
+        return std::make_shared<IfStatement>(
+            if_stmt->condition_, true_stmt, false_stmt);
+
+    }
+    else if (auto return_stmt = std::dynamic_pointer_cast<ReturnStatement>(stmt))
+    {
+        // HERE we add the the jacobian
+
+
+#if 0
+        for (auto const& func : context.jacobian_list)
+        {
+            func->PrintDebug();
+        }
+#endif
+
+        std::vector<std::shared_ptr<SymbolicMatrix> > adj_matrix_list;
+        for (size_t idx = context.jacobian_list.size(); idx != 0; )
+        {
+            bool is_terminal = (idx == context.jacobian_list.size());
+            --idx;
+
+            auto const& alloc_map = context.alloc_map_list[idx];
+
+            auto matrix_decl = context.jacobian_list[idx]->MakeMatrix(alloc_map, is_terminal);
+
+            adj_matrix_list.push_back(matrix_decl->Matrix());
+
+        }
+
+        auto fold_backwards = [&]()
+        {
+            // (M1*(M2*M3))
+            std::shared_ptr<SymbolicMatrix> adj_matrix = adj_matrix_list[0];
+            for (size_t idx = 1; idx < adj_matrix_list.size(); ++idx)
+            {
+                adj_matrix = adj_matrix_list[idx]->Multiply(*adj_matrix);
+            }
+            return adj_matrix;
+        };
+
+        auto adj_matrix = fold_backwards();
+
+        auto three_address_transform = std::make_shared<Transform::RemapUnique>("__adj");
+
+        std::unordered_set<std::string> three_addr_seen;
+        for (auto const& p : context.alloc_map_list.back())
+        {
+            three_addr_seen.insert(p.first);
+        }
+
+        auto AADIB = std::make_shared<InstructionBlock>();
+
+        std::vector<std::string> diff_output;
+
+        for (auto const& exo : context.exo_names)
+        {
+            auto d_sym = std::string("d_") + exo;
+
+            auto slot = context.alloc_map_list[0].find(exo)->second;
+            auto d_expr_orig = adj_matrix->At(slot, 0);
+
+            Transform::FoldZero fold_zero;
+            auto d_expr_no_zero = fold_zero.Fold(d_expr_orig);
+            auto d_expr_three_address = d_expr_no_zero->Clone(three_address_transform);
+
+            auto deps = d_expr_three_address->DepthFirstAnySymbolicDependencyAndThis();
+            for (auto head : deps.DepthFirst) {
+                if (head->IsExo())
+                    continue;
+                if (three_addr_seen.count(head->Name()) == 0) {
+                    auto expr = std::reinterpret_pointer_cast<EndgenousSymbol>(head)->Expr();
+                    AADIB->Add(std::make_shared<InstructionDeclareVariable>(head->Name(), expr));
+                    three_addr_seen.insert(head->Name());
+                }
+
+            }
+
+            std::string aux_name = "result_" + d_sym;
+            diff_output.push_back(aux_name);
+            AADIB->Add(std::make_shared<InstructionDeclareVariable>(aux_name, d_expr_three_address));
+
+
+        }
+
+        auto l = std::make_shared< InstructionLinearizer>();
+        AADIB->Accept(*l);
+
+        auto stmts_with_aad = l->stmts_;
+        stmts_with_aad.push_back(return_stmt);
+        return std::make_shared<StatementList>(stmts_with_aad);
+    }
+    else
+    {
+        throw std::domain_error("todo");
+    }
+
+ }
+
+
+std::shared_ptr<ProgramCode::Function> CloneWithDiffs(std::shared_ptr<ProgramCode::Function>& f)
+{
+    auto stmts = f->Statements();
+    std::unordered_map<std::string, size_t> alloc_map;
+    for (auto const& arg : f->Args())
+    {
+        auto slot = alloc_map.size();
+        alloc_map[arg] = slot;
+    }
+    ExecutionContext context;
+    context.exo_names = f->Args();
+    context.alloc_map_list.push_back(alloc_map);
+  
+    auto mapped_stmts = CloneStmtWithDiffs(context, stmts);
+    return std::make_shared<ProgramCode::Function>(
+        f->Name(),
+        f->Args(),
+        std::vector< std::shared_ptr<ProgramCode::Statement>>{ mapped_stmts });
+}
+
 
 double black(const double t, const double T, const double r, const double S, const double K, const double vol)
 {
@@ -1196,6 +1385,84 @@ double black(const double t, const double T, const double r, const double S, con
         const double __symbol_55 = __statement_10 * __symbol_53;
         const double __statement_18 = __symbol_55;
         const double result = __statement_18;
+        const double __adj64 = __symbol_2;
+        const double __adj65 = std::pow(__adj64, -0.500000);
+        const double __adj66 = 0.500000 * __adj65;
+        const double __adj61 = __symbol_4;
+        const double __adj24 = __statement_15;
+        const double __adj25 = std::pow(__adj24, 2.000000);
+        const double __adj26 = 0.500000 * __adj25;
+        const double __adj27 = -__adj26;
+        const double __adj28 = std::exp(__adj27);
+        const double __adj29 = __adj28 / 2.506628;
+        const double __adj22 = __symbol_8;
+        const double __adj7 = __statement_10;
+        const double __adj21 = -1.000000 * __adj7;
+        const double __adj23 = __adj22 * __adj21;
+        const double __adj30 = __adj29 * __adj23;
+        const double __adj58 = -1.000000 * __adj30;
+        const double __adj12 = __statement_14;
+        const double __adj13 = std::pow(__adj12, 2.000000);
+        const double __adj15 = 0.500000 * __adj13;
+        const double __adj16 = -__adj15;
+        const double __adj17 = std::exp(__adj16);
+        const double __adj18 = __adj17 / 2.506628;
+        const double __adj8 = __statement_11;
+        const double __adj9 = __adj8 * __adj7;
+        const double __adj19 = __adj18 * __adj9;
+        const double __adj31 = __adj30 + __adj19;
+        const double __adj57 = 0.500000 * __adj31;
+        const double __adj59 = __adj58 + __adj57;
+        const double __adj53 = __symbol_40;
+        const double __adj54 = -__adj53;
+        const double __adj32 = __statement_12;
+        const double __adj33 = std::pow(__adj32, 2.000000);
+        const double __adj55 = __adj54 / __adj33;
+        const double __adj56 = __adj55 * __adj31;
+        const double __adj60 = __adj59 + __adj56;
+        const double __adj62 = __adj61 * __adj60;
+        const double __adj67 = __adj66 * __adj62;
+        const double __adj51 = __symbol_9;
+        const double __adj48 = __symbol_10;
+        const double __adj49 = std::exp(__adj48);
+        const double __adj46 = __symbol_12;
+        const double __adj43 = __statement_16;
+        const double __adj44 = __adj43 * __adj7;
+        const double __adj40 = std::pow(__adj22, 2.000000);
+        const double __adj41 = __adj22 / __adj40;
+        const double __adj36 = __symbol_39;
+        const double __adj38 = 1.000000 / __adj36;
+        const double __adj34 = __adj32 / __adj33;
+        const double __adj35 = __adj34 * __adj31;
+        const double __adj39 = __adj38 * __adj35;
+        const double __adj42 = __adj41 * __adj39;
+        const double __adj45 = __adj44 + __adj42;
+        const double __adj47 = __adj46 * __adj45;
+        const double __adj50 = __adj49 * __adj47;
+        const double __adj52 = __adj51 * __adj50;
+        const double __adj68 = __adj67 + __adj52;
+        const double __adj5 = __symbol_30;
+        const double __adj2 = __symbol_31;
+        const double __adj3 = std::exp(__adj2);
+        const double __adj1 = __symbol_53;
+        const double __adj4 = __adj3 * __adj1;
+        const double __adj6 = __adj5 * __adj4;
+        const double result_d_T = __adj68 + __adj6;
+        const double __adj72 = __adj64 * __adj50;
+        const double __adj70 = -1.000000;
+        const double __adj69 = __adj64 * __adj4;
+        const double __adj71 = __adj70 * __adj69;
+        const double result_d_r = __adj72 + __adj71;
+        const double __adj73 = __symbol_11;
+        const double result_d_S = __adj73 * __adj45;
+        const double __adj77 = __statement_17;
+        const double __adj78 = __adj77 * __adj21;
+        const double __adj74 = -__adj8;
+        const double __adj75 = __adj74 / __adj40;
+        const double __adj76 = __adj75 * __adj39;
+        const double result_d_K = __adj78 + __adj76;
+        const double __adj79 = __symbol_3;
+        const double result_d_vol = __adj79 * __adj60;
         return result;
     }
     else {
@@ -1234,10 +1501,87 @@ double black(const double t, const double T, const double r, const double S, con
         const double __symbol_34 = __statement_1 * __symbol_29;
         const double __statement_9 = __symbol_34;
         const double result = __statement_9;
+        const double __adj64 = __symbol_2;
+        const double __adj65 = std::pow(__adj64, -0.500000);
+        const double __adj66 = 0.500000 * __adj65;
+        const double __adj61 = __symbol_4;
+        const double __adj24 = __statement_6;
+        const double __adj25 = std::pow(__adj24, 2.000000);
+        const double __adj26 = 0.500000 * __adj25;
+        const double __adj27 = -__adj26;
+        const double __adj28 = std::exp(__adj27);
+        const double __adj29 = __adj28 / 2.506628;
+        const double __adj22 = __symbol_8;
+        const double __adj7 = __statement_1;
+        const double __adj21 = -1.000000 * __adj7;
+        const double __adj23 = __adj22 * __adj21;
+        const double __adj30 = __adj29 * __adj23;
+        const double __adj58 = -1.000000 * __adj30;
+        const double __adj12 = __statement_5;
+        const double __adj13 = std::pow(__adj12, 2.000000);
+        const double __adj15 = 0.500000 * __adj13;
+        const double __adj16 = -__adj15;
+        const double __adj17 = std::exp(__adj16);
+        const double __adj18 = __adj17 / 2.506628;
+        const double __adj8 = __statement_2;
+        const double __adj9 = __adj8 * __adj7;
+        const double __adj19 = __adj18 * __adj9;
+        const double __adj31 = __adj30 + __adj19;
+        const double __adj57 = 0.500000 * __adj31;
+        const double __adj59 = __adj58 + __adj57;
+        const double __adj53 = __symbol_16;
+        const double __adj54 = -__adj53;
+        const double __adj32 = __statement_3;
+        const double __adj33 = std::pow(__adj32, 2.000000);
+        const double __adj55 = __adj54 / __adj33;
+        const double __adj56 = __adj55 * __adj31;
+        const double __adj60 = __adj59 + __adj56;
+        const double __adj62 = __adj61 * __adj60;
+        const double __adj67 = __adj66 * __adj62;
+        const double __adj51 = __symbol_9;
+        const double __adj48 = __symbol_10;
+        const double __adj49 = std::exp(__adj48);
+        const double __adj46 = __symbol_12;
+        const double __adj43 = __statement_7;
+        const double __adj44 = __adj43 * __adj7;
+        const double __adj40 = std::pow(__adj22, 2.000000);
+        const double __adj41 = __adj22 / __adj40;
+        const double __adj36 = __symbol_15;
+        const double __adj38 = 1.000000 / __adj36;
+        const double __adj34 = __adj32 / __adj33;
+        const double __adj35 = __adj34 * __adj31;
+        const double __adj39 = __adj38 * __adj35;
+        const double __adj42 = __adj41 * __adj39;
+        const double __adj45 = __adj44 + __adj42;
+        const double __adj47 = __adj46 * __adj45;
+        const double __adj50 = __adj49 * __adj47;
+        const double __adj52 = __adj51 * __adj50;
+        const double __adj68 = __adj67 + __adj52;
+        const double __adj5 = __symbol_30;
+        const double __adj2 = __symbol_31;
+        const double __adj3 = std::exp(__adj2);
+        const double __adj1 = __symbol_29;
+        const double __adj4 = __adj3 * __adj1;
+        const double __adj6 = __adj5 * __adj4;
+        const double result_d_T = __adj68 + __adj6;
+        const double __adj72 = __adj64 * __adj50;
+        const double __adj70 = -1.000000;
+        const double __adj69 = __adj64 * __adj4;
+        const double __adj71 = __adj70 * __adj69;
+        const double result_d_r = __adj72 + __adj71;
+        const double __adj73 = __symbol_11;
+        const double result_d_S = __adj73 * __adj45;
+        const double __adj77 = __statement_8;
+        const double __adj78 = __adj77 * __adj21;
+        const double __adj74 = -__adj8;
+        const double __adj75 = __adj74 / __adj40;
+        const double __adj76 = __adj75 * __adj39;
+        const double result_d_K = __adj78 + __adj76;
+        const double __adj79 = __symbol_3;
+        const double result_d_vol = __adj79 * __adj60;
         return result;
     }
 }
-
 
 
 int main()
@@ -1296,5 +1640,9 @@ int main()
     //ff->DebugPrint();
 
     ProgramCode::CodeWriter{}.EmitCode(std::cout, ff);
+
+    auto g = CloneWithDiffs(ff);
+
+    ProgramCode::CodeWriter{}.EmitCode(std::cout, g);
 }
 
