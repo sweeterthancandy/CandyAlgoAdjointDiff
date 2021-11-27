@@ -32,23 +32,23 @@ namespace CallOption
                 Double K,
                 Double tau,
                 Double r,
-                Double sigma)const
+                Double vol)const
             {
-                using MathFunctions::Phi;
-                using MathFunctions::Exp;
-                using MathFunctions::Call;
-                using MathFunctions::Pow;
-                using MathFunctions::If;
+                using Cady::MathFunctions::Phi;
+                using Cady::MathFunctions::Exp;
+                using Cady::MathFunctions::Call;
+                using Cady::MathFunctions::Pow;
+                using Cady::MathFunctions::If;
 
-                Double d1 = ((1.0 / (vol * Pow(tau, 0.5))) * (Log(S / K) + (r + (Pow(vol, 2.0)) / 2) * tau));
+                Double d1 = ((1.0 / (vol * Pow(tau, 0.5))) * (Log(x / K) + (r + (Pow(vol, 2.0)) / 2) * tau));
                 Double d2 = d1 - vol * tau;
                 Double pv = K * Exp(-r * tau);
-                Double black = Phi(d1) * S - Phi(d2) * pv;
+                Double black = Phi(d1) * x - Phi(d2) * pv;
                 return black;
             }
             std::vector<std::string> Arguments()const
             {
-                return { "x", "K", "tau", "r", "sigma" };
+                return { "x", "K", "tau", "r", "vol" };
             }
             std::string Name()const
             {

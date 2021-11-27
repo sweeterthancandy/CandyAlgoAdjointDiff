@@ -53,14 +53,14 @@
     <ClInclude Include="..\..\..\include\Cady\CpuTimer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ProgramCode.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\include\Cady\Templates\KOCallOption.h">
       <Filter>Templates</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\include\Cady\Templates\CallOption.h">
       <Filter>Templates</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\Cady\ProgramCode.h">
+      <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

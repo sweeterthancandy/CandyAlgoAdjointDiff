@@ -41,8 +41,8 @@ namespace KoBarrierOption
                 Double tau,
                 Double s)const
             {
-                using MathFunctions::Pow;
-                using MathFunctions::Log;
+                using Cady::MathFunctions::Pow;
+                using Cady::MathFunctions::Log;
                 return 1 / sigma / Pow(tau, 0.5) * (Log(s) + (r + Pow(sigma, 2.0) / 2) * tau);
             }
             std::vector<std::string> Arguments()const
@@ -94,8 +94,8 @@ namespace KoBarrierOption
                 Double tau,
                 Double s)const
             {
-                using MathFunctions::Pow;
-                using MathFunctions::Log;
+                using Cady::MathFunctions::Pow;
+                using Cady::MathFunctions::Log;
                 return 1 / sigma / Pow(tau, 0.5) * (Log(s) + (r - Pow(sigma, 2.0) / 2) * tau);
             }
             std::vector<std::string> Arguments()const
@@ -151,10 +151,10 @@ namespace KoBarrierOption
                 Double sigma,
                 Double B)const
             {
-                using MathFunctions::Phi;
-                using MathFunctions::Exp;
-                using MathFunctions::Call;
-                using MathFunctions::Pow;
+                using Cady::MathFunctions::Phi;
+                using Cady::MathFunctions::Exp;
+                using Cady::MathFunctions::Call;
+                using Cady::MathFunctions::Pow;
 
                 Double tmp0 = x * (Phi(Call(Double{}, FactorPlus{}, sigma, r, tau, x / K)) - Phi(Call(Double{}, FactorPlus{}, sigma, r, tau, x / B)));
                 Double tmp1 = -Exp(-r * tau) * K * (Phi(Call(Double{}, FactorMinus{}, sigma, r, tau, x / K)) - Phi(Call(Double{}, FactorMinus{}, sigma, r, tau, x / B)));
