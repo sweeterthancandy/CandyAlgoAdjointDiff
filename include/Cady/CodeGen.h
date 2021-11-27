@@ -594,7 +594,7 @@ namespace CodeGen{
 
 
     template<class Kernel>
-    void PrintCode()
+    std::shared_ptr<ProgramCode::Function> GenerateAADFunction()
     {
         auto ad_kernel = typename Kernel::template Build<DoubleKernel>();
 
@@ -642,8 +642,40 @@ namespace CodeGen{
 
         auto g = CloneWithDiffs(ff);
 
-        ProgramCode::CodeWriter{}.EmitCode(std::cout, g);
+        return g;
     }
+
+    struct ModuleWriter
+    {
+        explicit ModuleWriter(std::ostream& ostr = std::cout) :ostr_{ &ostr } {}
+        explicit ModuleWriter(std::string const& file_name)
+        {
+            auto ostr = std::make_shared<std::ofstream>(file_name);
+            if (!ostr->is_open())
+            {
+                throw std::domain_error("unable to open " + file_name);
+            }
+            ostr_ = ostr.get();
+            dest_ = ostr;
+        }
+        template<class F>
+        void Emit()
+        {
+            auto f = GenerateAADFunction<F>();
+            ProgramCode::CodeWriter{}.EmitCode(*ostr_, f);
+        }
+        template<class M>
+        void EmitModule()
+        {
+            M{}.Reflect([this](auto&& F) {
+                using fun_ty = std::decay_t<decltype(F)>;
+                this->template Emit<fun_ty>();
+                });
+        }
+    private:
+        std::ostream* ostr_;
+        std::shared_ptr<void> dest_;
+    };
 
 
 } // end namespace CodeGen

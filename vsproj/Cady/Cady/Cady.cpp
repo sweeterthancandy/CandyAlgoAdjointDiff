@@ -31,9 +31,8 @@ using namespace Cady::CodeGen;
 
 int main()
 {
-    PrintCode< KoBarrierOption::FactorPlus>();
-    PrintCode< KoBarrierOption::FactorMinus>();
-    PrintCode< KoBarrierOption::KoBarrierCallOption>();
+    auto w = ModuleWriter("C:\\temp\\Generated.h");
+    w.EmitModule< KoBarrierOption::Module>();
 
 #if 0
 
