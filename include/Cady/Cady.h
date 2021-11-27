@@ -727,95 +727,8 @@ struct BinaryOperator : Operator{
                 }
                 std::abort();
         }
-        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override
-        {
-                switch(op_)
-                {
-                        case OP_ADD:
-                        {
-                                return Add(
-                                        LParam()->Diff(symbol),
-                                        RParam()->Diff(symbol)
-                                );
-                        }
-                        case OP_SUB:
-                        {
-                                return Sub(
-                                        LParam()->Diff(symbol),
-                                        RParam()->Diff(symbol)
-                                );
-                        }
-                        case OP_MUL:
-                        {
-                                return Add(
-                                        Mul( LParam()->Diff(symbol), RParam()),
-                                        Mul( LParam(), RParam()->Diff(symbol))
-                                );
-                        }
-                        case OP_DIV:
-                        {
-                                return Div(
-                                        Sub(
-                                                Mul(
-                                                        LParam()->Diff(symbol),
-                                                        RParam()
-                                                ),
-                                                Mul(
-                                                        LParam(),
-                                                        RParam()->Diff(symbol)
-                                                )
-                                        ),
-                                        Pow(
-                                                RParam(),
-                                                Constant::Make(2.0)
-                                        )
-                                );
+        virtual std::shared_ptr<Operator> Diff(std::string const& symbol)const override;
 
-                        }
-                        case OP_POW:
-                        {
-                                // lets assume that the exponent is indpedent
-                                // of the deriviative for now
-                                //
-                                // f(x)^C = C * f(x)*(C-1) * f'(x)
-                                // ~ left ^ right
-                                //
-                                return Mul(
-                                        RParam(),
-                                        Mul(
-                                                Pow(
-                                                        LParam(),
-                                                        Sub(
-                                                                RParam(),
-                                                                Constant::Make(1.0)
-                                                        )
-                                                ),
-                                                LParam()->Diff(symbol)
-                                        )
-                                );
-                        }
-#if 0
-                        case OP_MIN:
-                        {
-                            return Min(
-                                LParam()->Diff(symbol),
-                                RParam()->Diff(symbol)
-                            );
-                        }
-                        case OP_MAX:
-                        {
-                            return Max(
-                                LParam()->Diff(symbol),
-                                RParam()->Diff(symbol)
-                            );
-                        }
-#endif
-                        case OP_MIN:
-                        case OP_MAX:
-                            throw std::domain_error("cant diff min or max atm");
-                }
-                std::abort();
-        }
 
 
         virtual void EmitCode(std::ostream& ss)const override{
@@ -1259,7 +1172,112 @@ inline void Operator::MutateToEndgenous(std::string const& name){
         new(this)EndgenousSymbol(name, clone);
 }
 
+std::shared_ptr<Operator> BinaryOperator::Diff(std::string const& symbol)const
+{
+    switch (op_)
+    {
+    case OP_ADD:
+    {
+        return Add(
+            LParam()->Diff(symbol),
+            RParam()->Diff(symbol)
+        );
+    }
+    case OP_SUB:
+    {
+        return Sub(
+            LParam()->Diff(symbol),
+            RParam()->Diff(symbol)
+        );
+    }
+    case OP_MUL:
+    {
+        return Add(
+            Mul(LParam()->Diff(symbol), RParam()),
+            Mul(LParam(), RParam()->Diff(symbol))
+        );
+    }
+    case OP_DIV:
+    {
+        return Div(
+            Sub(
+                Mul(
+                    LParam()->Diff(symbol),
+                    RParam()
+                ),
+                Mul(
+                    LParam(),
+                    RParam()->Diff(symbol)
+                )
+            ),
+            Pow(
+                RParam(),
+                Constant::Make(2.0)
+            )
+        );
 
+    }
+    case OP_POW:
+    {
+
+        if (auto as_constant = std::dynamic_pointer_cast<Constant>(RParam()))
+        {
+            // we can assume
+            // f(x)^C = C * f(x)*(C-1) * f'(x)
+            // ~ left ^ right
+            //
+            return Mul(
+                RParam(),
+                Mul(
+                    Pow(
+                        LParam(),
+                        Sub(
+                            RParam(),
+                            Constant::Make(1.0)
+                        )
+                    ),
+                    LParam()->Diff(symbol)
+                )
+            );
+        }
+        else
+        {
+            auto f = LParam();
+            auto f_prime = f->Diff(symbol);
+            auto g = RParam();
+            auto g_prime = g->Diff(symbol);
+
+            auto tmp0 = Mul(f_prime, Div(g, f));
+            auto tmp1 = Mul(g_prime, std::make_shared<Log>(f));
+            auto tmp2 = Add(tmp0, tmp1);
+            auto tmp3 = Pow(f, g);
+            auto tmp4 = Mul(tmp3, tmp2);
+            return tmp4;
+        }
+
+    }
+#if 0
+    case OP_MIN:
+    {
+        return Min(
+            LParam()->Diff(symbol),
+            RParam()->Diff(symbol)
+        );
+    }
+    case OP_MAX:
+    {
+        return Max(
+            LParam()->Diff(symbol),
+            RParam()->Diff(symbol)
+        );
+    }
+#endif
+    case OP_MIN:
+    case OP_MAX:
+        throw std::domain_error("cant diff min or max atm");
+    }
+    std::abort();
+}
 
 
 } // end namespace Cady
