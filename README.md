@@ -13,13 +13,13 @@ def ko_call_option_analytic(x, K, tau, r, sigma, barrier) :
     import math
     import scipy.stats
     def N(x) :
-    return scipy.stats.norm.cdf(x)
+        return scipy.stats.norm.cdf(x)
 
     def factor_plus(tau, s) :
-    return 1 / sigma / math.sqrt(tau) * (math.log(s) + (r + sigma * *2 / 2) * tau)
+        return 1 / sigma / math.sqrt(tau) * (math.log(s) + (r + sigma * *2 / 2) * tau)
 
     def factor_minus(tau, s) :
-    return 1 / sigma / math.sqrt(tau) * (math.log(s) + (r - sigma * *2 / 2) * tau)
+        return 1 / sigma / math.sqrt(tau) * (math.log(s) + (r - sigma * *2 / 2) * tau)
 
     tmp0 = x * (N(factor_plus(tau, x / K)) - N(factor_plus(tau, x / barrier)))
     tmp1 = -math.exp(-r * tau) * K * (N(factor_minus(tau, x / K)) - N(factor_minus(tau, x / barrier)))
