@@ -13,6 +13,9 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Templates">
+      <UniqueIdentifier>{f3b423e5-e240-485b-8c93-11322ce2ba33}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Cady.cpp">
@@ -52,6 +55,12 @@
     </ClInclude>
     <ClInclude Include="ProgramCode.h">
       <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\Cady\Templates\KOCallOption.h">
+      <Filter>Templates</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\include\Cady\Templates\CallOption.h">
+      <Filter>Templates</Filter>
     </ClInclude>
   </ItemGroup>
 </Project>

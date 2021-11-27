@@ -153,6 +153,8 @@
     <ClInclude Include="..\..\..\include\Cady\ImpliedMatrixFunction.h" />
     <ClInclude Include="..\..\..\include\Cady\Instruction.h" />
     <ClInclude Include="..\..\..\include\Cady\SymbolicMatrix.h" />
+    <ClInclude Include="..\..\..\include\Cady\Templates\CallOption.h" />
+    <ClInclude Include="..\..\..\include\Cady\Templates\KOCallOption.h" />
     <ClInclude Include="..\..\..\include\Cady\Transform.h" />
     <ClInclude Include="ProgramCode.h" />
   </ItemGroup>
