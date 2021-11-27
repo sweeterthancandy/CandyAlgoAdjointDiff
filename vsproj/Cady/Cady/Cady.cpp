@@ -10,6 +10,7 @@
 #include "Cady/AADFunctionGenerator.h"
 #include "Cady/CodeWriter.h"
 #include "Cady/ProgramCode.h"
+#include "Cady/SourceCodeManager.h"
 #include "Cady/CodeGen.h"
 #include "Cady/CpuTimer.h"
 
@@ -27,25 +28,21 @@ using namespace Cady::CodeGen;
 
 
 
-
+#include "C:\\temp\\Generated.h"
 
 int main()
 {
     auto w = ModuleWriter("C:\\temp\\Generated.h");
+    w.AddManager(std::make_shared< VerbatumSCM>());
+    w.AddManager(std::make_shared< ForwardDiffSCM>());
+    w.AddManager(std::make_shared< BackwardDiffSCM>());
     w.EmitModule< KoBarrierOption::Module>();
 
-#if 0
+#if 1
 
     using kernel_ty = KoBarrierOption::KoBarrierCallOption;
 
-    /*
-    * Double x, 
-                Double K,
-                Double tau,
-                Double r,
-                Double sigma,
-                Double B
-    */
+ 
     double S = 80;
     double K = 100;
     double tau = 1.0;
@@ -53,7 +50,7 @@ int main()
     double vol = 0.2;
     double B = 120;
     std::cout << kernel_ty::Build<double>{}.Evaluate(S, K, tau, r, vol, B) << "\n";
-    auto aad_result = __KoBarrierCallOption(S, K, tau, r, vol, B);
+    auto aad_result = __KoBarrierCallOption_bck_diff(S, K, tau, r, vol, B);
 
 
 
@@ -84,7 +81,20 @@ int main()
     {
         cpu_timer timer;
         for (volatile size_t idx = 0; idx != num_evals; ++idx)
-            __KoBarrierCallOption(S, K, tau, r, vol, B);
+            __KoBarrierCallOption_verbatum(S, K, tau, r, vol, B);
+        std::cout << std::setw(30) << "AAD function" << " => " << timer.format() << "\n";
+    }
+    
+    {
+        cpu_timer timer;
+        for (volatile size_t idx = 0; idx != num_evals; ++idx)
+            __KoBarrierCallOption_bck_diff(S, K, tau, r, vol, B);
+        std::cout << std::setw(30) << "AAD function" << " => " << timer.format() << "\n";
+    }
+    {
+        cpu_timer timer;
+        for (volatile size_t idx = 0; idx != num_evals; ++idx)
+            __KoBarrierCallOption_fwd_diff(S, K, tau, r, vol, B);
         std::cout << std::setw(30) << "AAD function" << " => " << timer.format() << "\n";
     }
 #endif

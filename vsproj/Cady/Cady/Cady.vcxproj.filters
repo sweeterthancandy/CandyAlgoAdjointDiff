@@ -62,5 +62,8 @@
     <ClInclude Include="..\..\..\include\Cady\ProgramCode.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\include\Cady\SourceCodeManager.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

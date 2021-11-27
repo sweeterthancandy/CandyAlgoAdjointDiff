@@ -7,6 +7,12 @@
 namespace Cady{
 namespace CodeGen{
 
+    
+
+
+    
+
+
     std::shared_ptr<Module> BuildRecursiveEx(std::shared_ptr<Operator> const& head)
     {
         struct CtrlFinder
@@ -178,6 +184,8 @@ namespace CodeGen{
     */
     struct InstructionLinearizer : ControlBlockVisitor
     {
+        explicit InstructionLinearizer(std::shared_ptr<SourceCodeManager> const& mgr) :mgr_{ mgr } {}
+        std::shared_ptr<SourceCodeManager> mgr_;
         void AcceptInstruction(const std::shared_ptr<const Instruction>& instr) override
         {
 
@@ -209,7 +217,7 @@ namespace CodeGen{
                         arg_list.push_back(make_rvalue(arg));
                     }
                     auto call_stmt = std::make_shared<ProgramCode::CallStatement>(
-                        as_call->FunctionName(),
+                        mgr_->ImpliedName(as_call->FunctionName()),
                         std::vector<std::shared_ptr<ProgramCode::LValue> >{std::make_shared<ProgramCode::LValue>(as_lvalue_assign->LValueName())},
                         arg_list);
                     stmts_.push_back(call_stmt);
@@ -331,8 +339,8 @@ namespace CodeGen{
         }
         void AcceptIf(const std::shared_ptr<const IfBlock>& if_block)
         {
-            InstructionLinearizer if_true;
-            InstructionLinearizer if_false;
+            InstructionLinearizer if_true{ mgr_ };
+            InstructionLinearizer if_false{ mgr_ };
             if_block->IfTrue()->Accept(if_true);
             if_block->IfFalse()->Accept(if_false);
 
@@ -353,6 +361,7 @@ namespace CodeGen{
 
     struct ExecutionContext
     {
+        std::shared_ptr<SourceCodeManager> mgr;
         std::vector<std::string> exo_names;
         std::vector<std::unordered_map<std::string, size_t> > alloc_map_list;
         std::vector<std::shared_ptr<ImpliedMatrixFunction> > jacobian_list;
@@ -497,6 +506,7 @@ namespace CodeGen{
 
             }
 
+#if 0
             auto fold_backwards = [&]()
             {
                 // (M1*(M2*M3))
@@ -509,6 +519,48 @@ namespace CodeGen{
             };
 
             auto adj_matrix = fold_backwards();
+#endif
+
+            auto fold_backwards = [&]()
+            {
+                // (M1*(M2*M3))
+                std::shared_ptr<SymbolicMatrix> adj_matrix = adj_matrix_list[0];
+                for (size_t idx = 1; idx < adj_matrix_list.size(); ++idx)
+                {
+                    adj_matrix = adj_matrix_list[idx]->Multiply(*adj_matrix);
+                }
+                return adj_matrix;
+            };
+
+            auto fold_forwards = [&]()
+            {
+                auto rev_order = std::vector<std::shared_ptr<SymbolicMatrix> >(adj_matrix_list.rbegin(), adj_matrix_list.rend());
+
+                // (M1*M2)*M3)
+                std::shared_ptr<SymbolicMatrix> adj_matrix = rev_order[0];
+                for (size_t idx = 1; idx < rev_order.size(); ++idx)
+                {
+                    adj_matrix = adj_matrix->Multiply(*rev_order[idx]);
+                }
+
+                return adj_matrix;
+            };
+
+            auto adj_matrix = [&]()-> std::shared_ptr<SymbolicMatrix>
+            {
+                if (context.mgr->GetDiffMode() == DM_Forward)
+                {
+                    return fold_forwards();
+                }
+                else if (context.mgr->GetDiffMode() == DM_Backward)
+                {
+                    return fold_backwards();
+                }
+                else
+                {
+                    throw std::domain_error("unexpected diff type");
+                }
+            }();
 
             auto three_address_transform = std::make_shared<Transform::RemapUnique>("__adj");
 
@@ -556,7 +608,7 @@ namespace CodeGen{
 
             }
 
-            auto l = std::make_shared<InstructionLinearizer>();
+            auto l = std::make_shared<InstructionLinearizer>(context.mgr);
             AADIB->Accept(*l);
 
             auto stmts_with_aad = l->stmts_;
@@ -571,7 +623,9 @@ namespace CodeGen{
     }
 
 
-    std::shared_ptr<ProgramCode::Function> CloneWithDiffs(std::shared_ptr<ProgramCode::Function>& f)
+    std::shared_ptr<ProgramCode::Function> CloneWithDiffs(
+        std::shared_ptr<SourceCodeManager> const& mgr,
+        std::shared_ptr<ProgramCode::Function>& f)
     {
         auto stmts = f->Statements();
         std::unordered_map<std::string, size_t> alloc_map;
@@ -581,6 +635,7 @@ namespace CodeGen{
             alloc_map[arg] = slot;
         }
         ExecutionContext context;
+        context.mgr = mgr;
         context.exo_names = f->Args();
         context.alloc_map_list.push_back(alloc_map);
 
@@ -594,7 +649,7 @@ namespace CodeGen{
 
 
     template<class Kernel>
-    std::shared_ptr<ProgramCode::Function> GenerateAADFunction()
+    std::shared_ptr<ProgramCode::Function> GenerateAADFunction(std::shared_ptr<SourceCodeManager> const& mgr)
     {
         auto ad_kernel = typename Kernel::template Build<DoubleKernel>();
 
@@ -632,18 +687,38 @@ namespace CodeGen{
         auto v = std::make_shared< DebugControlBlockVisitor>();
         //M->Accept(*v);
 
-        auto l = std::make_shared< InstructionLinearizer>();
+        auto l = std::make_shared< InstructionLinearizer>(mgr);
         M->Accept(*l);
 
-        auto ff = std::make_shared<ProgramCode::Function>(ad_kernel.Name(), arguments, l->stmts_);
+        auto ff = std::make_shared<ProgramCode::Function>(
+            mgr->ImpliedName(ad_kernel.Name()),
+            arguments, 
+            l->stmts_);
         //ff->DebugPrint();
 
         //ProgramCode::CodeWriter{}.EmitCode(std::cout, ff);
-
-        auto g = CloneWithDiffs(ff);
-
-        return g;
+        if (mgr->GetDiffMode() != DM_None)
+        {
+            auto g = CloneWithDiffs(mgr, ff);
+            return g;
+        }
+        else
+        {
+            return ff;
+        }
     }
+
+
+
+
+
+
+
+
+
+
+
+    
 
     struct ModuleWriter
     {
@@ -658,23 +733,51 @@ namespace CodeGen{
             ostr_ = ostr.get();
             dest_ = ostr;
         }
+        ModuleWriter& AddManager(std::shared_ptr<SourceCodeManager> const& mgr)
+        {
+            manager_list_.push_back(mgr);
+            return *this;
+        }
         template<class F>
         void Emit()
         {
-            auto f = GenerateAADFunction<F>();
-            ProgramCode::CodeWriter{}.EmitCode(*ostr_, f);
+            if (manager_list_.empty())
+            {
+                throw std::domain_error("need at least one manager");
+            }
+
+            for (auto const& mgr : manager_list_)
+            {
+                auto f = GenerateAADFunction<F>(mgr);
+                ProgramCode::CodeWriter{}.EmitCode(*ostr_, f);
+            }
+            
         }
         template<class M>
         void EmitModule()
         {
-            M{}.Reflect([this](auto&& F) {
-                using fun_ty = std::decay_t<decltype(F)>;
-                this->template Emit<fun_ty>();
+            
+
+            if (manager_list_.empty())
+            {
+                throw std::domain_error("need at least one manager");
+            }
+
+            for (auto const& mgr : manager_list_)
+            {
+                M{}.Reflect([this,&mgr](auto&& F) {
+                    using fun_ty = std::decay_t<decltype(F)>;
+                    auto f = GenerateAADFunction<fun_ty>(mgr);
+                    ProgramCode::CodeWriter{}.EmitCode(*ostr_, mgr, f);
                 });
+                
+            }
         }
     private:
         std::ostream* ostr_;
         std::shared_ptr<void> dest_;
+
+        std::vector<std::shared_ptr< SourceCodeManager> > manager_list_;
     };
 
 

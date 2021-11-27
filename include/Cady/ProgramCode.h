@@ -1,6 +1,8 @@
 #ifndef CADY_PROGRAM_CODE_H
 #define CADY_PROGRAM_CODE_H
 
+#include "Cady/SourceCodeManager.h"
+
 namespace Cady
 {
     namespace ProgramCode
@@ -365,9 +367,13 @@ namespace Cady
         };
 
 
+
+       
+
+
         struct CodeWriter
         {
-            void EmitCode(std::ostream& ostr, std::shared_ptr< Function> const& f)const
+            void EmitCode(std::ostream& ostr, std::shared_ptr<SourceCodeManager> const& mgr, std::shared_ptr< Function> const& f)const
             {
                 ostr << "auto " << f->Name() << "(";
                 auto const& args = f->Args();
@@ -377,10 +383,10 @@ namespace Cady
                 }
                 ostr << ")\n";
                 ostr << "{\n";
-                EmitCodeForStatement(ostr, f->Statements(), 1);
+                EmitCodeForStatement(ostr, mgr, f->Statements(), 1);
                 ostr << "}\n";
             }
-            void EmitCodeForStatement(std::ostream& ostr, std::shared_ptr<Statement> const& stmt, size_t indent)const
+            void EmitCodeForStatement(std::ostream& ostr, std::shared_ptr<SourceCodeManager> const& mgr, std::shared_ptr<Statement> const& stmt, size_t indent)const
             {
                 auto do_indent = [&]() {
                     if (indent != 0)
@@ -451,10 +457,10 @@ namespace Cady
                 {
                     do_indent();
                     ostr << "if( !! " << if_stmt->condition_->ToString() << " ){\n";
-                    EmitCodeForStatement(ostr, if_stmt->if_true_, indent + 1);
+                    EmitCodeForStatement(ostr, mgr, if_stmt->if_true_, indent + 1);
                     do_indent();
                     std::cout << "} else {\n";
-                    EmitCodeForStatement(ostr, if_stmt->if_false_, indent + 1);
+                    EmitCodeForStatement(ostr, mgr, if_stmt->if_false_, indent + 1);
                     do_indent();
                     std::cout << "}\n";
                 }
@@ -462,7 +468,7 @@ namespace Cady
                 {
                     for (auto const& x : *stmts)
                     {
-                        EmitCodeForStatement(ostr, x, indent);
+                        EmitCodeForStatement(ostr, mgr, x, indent);
                     }
                 }
                 else if (auto return_stmt = std::dynamic_pointer_cast<ReturnStatement>(stmt))
@@ -482,20 +488,40 @@ namespace Cady
                 }
                 else if (auto call_stmt = std::dynamic_pointer_cast<CallStatement>(stmt))
                 {
-                    do_indent();
-                    std::string call_result_token = "__call_result_" + std::to_string((std::size_t)call_stmt.get());
-                    ostr << "auto " << call_result_token << " = " << call_stmt->function_name_ << "(";
-                    for (size_t idx = 0; idx != call_stmt->arg_list_.size(); ++idx)
+                    if (mgr->GetCC() == CC_ReturnScalar)
                     {
-                        ostr << (idx == 0 ? "" : ", ") << call_stmt->arg_list_[idx]->ToString();
-                    }
-                    ostr << ");\n";
-                    for (size_t idx = 0; idx != call_stmt->result_list_.size(); ++idx)
-                    {
-                        auto const& lvalue = call_stmt->result_list_[idx];
+                        if (call_stmt->result_list_.size() != 1)
+                        {
+                            throw std::domain_error("calling convention demands a single result");
+                        }
+                        auto const& lvalue = call_stmt->result_list_[0];
                         do_indent();
-                        ostr << "const double " << lvalue->ToString() << " = " << call_result_token << "[" << idx << "];\n";
+                        ostr << "const double " << lvalue->ToString() << " = " << call_stmt->function_name_ << "(";
+                        for (size_t idx = 0; idx != call_stmt->arg_list_.size(); ++idx)
+                        {
+                            ostr << (idx == 0 ? "" : ", ") << call_stmt->arg_list_[idx]->ToString();
+                        }
+                        ostr << ");\n";
+                        
                     }
+                    else
+                    {
+                        do_indent();
+                        std::string call_result_token = "__call_result_" + std::to_string((std::size_t)call_stmt.get());
+                        ostr << "auto " << call_result_token << " = " << call_stmt->function_name_ << "(";
+                        for (size_t idx = 0; idx != call_stmt->arg_list_.size(); ++idx)
+                        {
+                            ostr << (idx == 0 ? "" : ", ") << call_stmt->arg_list_[idx]->ToString();
+                        }
+                        ostr << ");\n";
+                        for (size_t idx = 0; idx != call_stmt->result_list_.size(); ++idx)
+                        {
+                            auto const& lvalue = call_stmt->result_list_[idx];
+                            do_indent();
+                            ostr << "const double " << lvalue->ToString() << " = " << call_result_token << "[" << idx << "];\n";
+                        }
+                    }
+                    
                 }
                 else
                 {
