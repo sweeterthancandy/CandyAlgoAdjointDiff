@@ -976,7 +976,7 @@ std::shared_ptr<Operator> Sin::Diff(std::string const& symbol)const{
 }
 
 
-// normal distribution CFS
+// normal distribution CDF
 struct Phi : Operator{
         Phi(std::shared_ptr<Operator> arg)
                 :Operator{"Phi"}
