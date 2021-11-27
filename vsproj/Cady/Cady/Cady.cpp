@@ -17,6 +17,215 @@
 
 using namespace Cady;
 
+/*
+def ko_call_option_analytic(x, K, tau, r, sigma, barrier) :
+    """
+    From Shreve
+    """
+    import math
+    import scipy.stats
+    def N(x) :
+    return scipy.stats.norm.cdf(x)
+
+    def factor_plus(tau, s) :
+    return 1 / sigma / math.sqrt(tau) * (math.log(s) + (r + sigma * *2 / 2) * tau)
+
+    def factor_minus(tau, s) :
+    return 1 / sigma / math.sqrt(tau) * (math.log(s) + (r - sigma * *2 / 2) * tau)
+
+    tmp0 = x * (N(factor_plus(tau, x / K)) - N(factor_plus(tau, x / barrier)))
+    tmp1 = -math.exp(-r * tau) * K * (N(factor_minus(tau, x / K)) - N(factor_minus(tau, x / barrier)))
+    tmp2 = -barrier * (x / barrier) * *(-2 * r / sigma * *2) * (N(factor_plus(tau, barrier * *2 / K / x)) - N(factor_plus(tau, barrier / x)))
+    tmp3_inner = N(factor_minus(tau, barrier * *2 / K / x)) - N(factor_minus(tau, barrier / x))
+    tmp3 = math.exp(-r * tau) * K * (x / barrier) * *(-2 * r / sigma * *2 + 1) * tmp3_inner
+    return tmp0 + tmp1 + tmp2 + tmp3
+
+*/
+
+
+
+namespace KoBarrierOption
+{
+    struct FactorPlus {
+
+        template<class Double>
+        struct Build {
+            Double Evaluate(
+                Double sigma,
+                Double r,
+                Double tau,
+                Double s)const
+            {
+                using MathFunctions::Pow;
+                using MathFunctions::Log;
+                return 1 / sigma / Pow(tau, 0.5) * (Log(s) + (r + Pow(sigma, 2.0) / 2) * tau);
+            }
+            std::vector<std::string> Arguments()const
+            {
+                return { "sigma", "r", "tau", "s" };
+            }
+            std::string Name()const
+            {
+                return "__FactorPlus";
+            }
+
+            Double EvaluateVec(std::vector<Double> const& args)
+            {
+                enum { NumArgs = 4 };
+                if (args.size() != NumArgs)
+                {
+                    throw std::runtime_error("bad number of args");
+                }
+                return Evaluate(
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3]);
+            }
+            template<class F>
+            Double Invoke(F&& f, std::vector<Double> const& args)
+            {
+                enum { NumArgs = 4 };
+                if (args.size() != NumArgs)
+                {
+                    throw std::runtime_error("bad number of args");
+                }
+                return f(
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3]);
+            }
+        };
+    };
+
+    struct FactorMinus{
+
+        template<class Double>
+        struct Build {
+            Double Evaluate(
+                Double sigma,
+                Double r,
+                Double tau,
+                Double s)const
+            {
+                using MathFunctions::Pow;
+                using MathFunctions::Log;
+                return 1 / sigma / Pow(tau, 0.5) * (Log(s) + (r - Pow(sigma, 2.0) / 2) * tau);
+            }
+            std::vector<std::string> Arguments()const
+            {
+                return { "sigma", "r", "tau", "s" };
+            }
+            std::string Name()const
+            {
+                return "__FactorMinus";
+            }
+
+            Double EvaluateVec(std::vector<Double> const& args)
+            {
+                enum { NumArgs = 4 };
+                if (args.size() != NumArgs)
+                {
+                    throw std::runtime_error("bad number of args");
+                }
+                return Evaluate(
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3]);
+            }
+            template<class F>
+            Double Invoke(F&& f, std::vector<Double> const& args)
+            {
+                enum { NumArgs = 4 };
+                if (args.size() != NumArgs)
+                {
+                    throw std::runtime_error("bad number of args");
+                }
+                return f(
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3]);
+            }
+        };
+    };
+
+    
+
+    struct KoBarrierCallOption {
+
+        template<class Double>
+        struct Build {
+            Double Evaluate(
+                Double x, 
+                Double K,
+                Double tau,
+                Double r,
+                Double sigma,
+                Double B)const
+            {
+                using MathFunctions::Phi;
+                using MathFunctions::Exp;
+                using MathFunctions::Call;
+                // tmp0 = x * (N(factor_plus(tau, x / K)) - N(factor_plus(tau, x / barrier)))
+                Double tmp0 = x * (Phi(Call(Double{}, FactorPlus{}, sigma, r, tau, x / K)) - Phi(Call(Double{}, FactorPlus{}, sigma, r, tau, x / B)));
+
+                // tmp1 = -math.exp(-r * tau) * K * (N(factor_minus(tau, x / K)) - N(factor_minus(tau, x / barrier)))
+                Double tmp1 = -Exp(-r * tau) * K * (Phi(Call(Double{}, FactorMinus{}, sigma, r, tau, x / K)) - Phi(Call(Double{}, FactorMinus{}, sigma, r, tau, x / B)));
+
+                
+                Double pv = tmp0 + tmp1;
+                return pv;
+
+                
+            }
+            std::vector<std::string> Arguments()const
+            {
+                return { "x", "K", "tau", "r", "sigma", "B"};
+            }
+            std::string Name()const
+            {
+                return "__KoBarrierCallOption";
+            }
+
+            Double EvaluateVec(std::vector<Double> const& args)
+            {
+                enum { NumArgs = 6 };
+                if (args.size() != NumArgs)
+                {
+                    throw std::runtime_error("bad number of args");
+                }
+                return Evaluate(
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3],
+                    args[4],
+                    args[5]);
+            }
+            template<class F>
+            Double Invoke(F&& f, std::vector<Double> const& args)
+            {
+                enum { NumArgs = 6 };
+                if (args.size() != NumArgs)
+                {
+                    throw std::runtime_error("bad number of args");
+                }
+                return f(
+                    args[0],
+                    args[1],
+                    args[2],
+                    args[3],
+                    args[4],
+                    args[5]);
+            }
+        };
+    };
+
+
+} // end namespace KoBarrierOption
 
 
 struct MyMax {
@@ -964,12 +1173,23 @@ namespace Cady
             std::shared_ptr<StatementList> stmts_;
         };
 
+        struct Namespace
+        {
+            Namespace& AddFunction(std::shared_ptr<Function> const& ptr)
+            {
+                functions_.push_back(ptr);
+                return *this;
+            }
+        private:
+            std::vector<std::shared_ptr<Function> > functions_;
+        };
+
 
         struct CodeWriter
         {
             void EmitCode(std::ostream& ostr, std::shared_ptr< Function> const& f)const
             {
-                ostr << "double " << f->Name() << "(";
+                ostr << "auto " << f->Name() << "(";
                 auto const& args = f->Args();
                 for (size_t idx = 0; idx != args.size(); ++idx)
                 {
@@ -1375,7 +1595,7 @@ std::shared_ptr<ProgramCode::Statement> CloneStmtWithDiffs(
         }
         for (auto const& arg : call_stmt->arg_list_)
         {
-            std::string d_name = "d_" + arg->ToString();
+            std::string d_name = "d_" + std::to_string((size_t)call_stmt.get()) + "_" + arg->ToString();
             mapped_result_list.push_back(std::make_shared<LValue>(d_name));
         }
         
@@ -1912,23 +2132,390 @@ auto __black(const double t, const double T, const double r, const double S, con
     return std::array<double, 7>{result, result_d_t, result_d_T, result_d_r, result_d_S, result_d_K, result_d_vol};
 }
 
+template<class Kernel>
+void PrintCode()
+{
+    auto ad_kernel = typename Kernel::template Build<DoubleKernel>();
 
+    auto arguments = ad_kernel.Arguments();
+
+    std::vector<DoubleKernel> symbolc_arguments;
+    for (auto const& arg : arguments)
+    {
+        symbolc_arguments.push_back(DoubleKernel::BuildFromExo(arg));
+    }
+    auto function_root = ad_kernel.EvaluateVec(symbolc_arguments);
+
+    auto head = function_root.as_operator_();
+
+    auto three_address_transform = std::make_shared<Transform::RemapUnique>();
+    auto three_address_tree = head->Clone(three_address_transform);
+
+    //three_address_transform->Debug();
+
+    //auto call_expanded_head = ExpandCall(three_address_tree);
+    auto call_expanded_head = three_address_tree;
+
+    auto block = BuildRecursiveEx(call_expanded_head);
+
+    auto f = std::make_shared<Function>(block);
+    for (auto const& arg : arguments)
+    {
+        f->AddArg(std::make_shared<FunctionArgument>(FAK_Double, arg));
+    }
+
+    //f->GetModule()->EmitCode(std::cout);
+
+    auto M = f->GetModule();
+
+    auto v = std::make_shared< DebugControlBlockVisitor>();
+    //M->Accept(*v);
+
+    auto l = std::make_shared< InstructionLinearizer>();
+    M->Accept(*l);
+
+    auto ff = std::make_shared<ProgramCode::Function>(ad_kernel.Name(), arguments, l->stmts_);
+    //ff->DebugPrint();
+
+    //ProgramCode::CodeWriter{}.EmitCode(std::cout, ff);
+
+    auto g = CloneWithDiffs(ff);
+
+    ProgramCode::CodeWriter{}.EmitCode(std::cout, g);
+}
+
+auto __FactorPlus(const double sigma, const double r, const double tau, const double s)
+{
+    const double __symbol_3 = sigma;
+    const double __symbol_15 = 1.000000 / __symbol_3;
+    const double __symbol_1 = tau;
+    const double __symbol_13 = std::pow(__symbol_1, 0.500000);
+    const double __symbol_16 = __symbol_15 / __symbol_13;
+    const double __symbol_9 = s;
+    const double __symbol_10 = std::log(__symbol_9);
+    const double __symbol_6 = r;
+    const double __symbol_4 = std::pow(__symbol_3, 2.000000);
+    const double __symbol_5 = __symbol_4 / 2.000000;
+    const double __symbol_7 = __symbol_6 + __symbol_5;
+    const double __symbol_8 = __symbol_7 * __symbol_1;
+    const double __symbol_11 = __symbol_10 + __symbol_8;
+    const double __symbol_17 = __symbol_16 * __symbol_11;
+    const double __statement_0 = __symbol_17;
+    const double result = __statement_0;
+    const double __adj7 = __symbol_3;
+    const double __adj18 = 2.000000 * __adj7;
+    const double __adj16 = 2.000000 / 4.000000;
+    const double __adj13 = __symbol_1;
+    const double __adj12 = __symbol_16;
+    const double __adj14 = __adj13 * __adj12;
+    const double __adj17 = __adj16 * __adj14;
+    const double __adj19 = __adj18 * __adj17;
+    const double __adj8 = std::pow(__adj7, 2.000000);
+    const double __adj10 = -1.000000 / __adj8;
+    const double __adj3 = __symbol_13;
+    const double __adj4 = std::pow(__adj3, 2.000000);
+    const double __adj5 = __adj3 / __adj4;
+    const double __adj1 = __symbol_11;
+    const double __adj6 = __adj5 * __adj1;
+    const double __adj11 = __adj10 * __adj6;
+    const double result_d_sigma = __adj19 + __adj11;
+    const double result_d_r = __adj13 * __adj12;
+    const double __adj29 = __symbol_7;
+    const double __adj30 = __adj29 * __adj12;
+    const double __adj25 = std::pow(__adj13, -0.500000);
+    const double __adj27 = 0.500000 * __adj25;
+    const double __adj20 = __symbol_15;
+    const double __adj21 = -__adj20;
+    const double __adj22 = __adj21 / __adj4;
+    const double __adj23 = __adj22 * __adj1;
+    const double __adj28 = __adj27 * __adj23;
+    const double result_d_tau = __adj30 + __adj28;
+    const double __adj31 = __symbol_9;
+    const double __adj33 = 1.000000 / __adj31;
+    const double result_d_s = __adj33 * __adj12;
+    return std::array<double, 5>{result, result_d_sigma, result_d_r, result_d_tau, result_d_s};
+}
+auto __FactorMinus(const double sigma, const double r, const double tau, const double s)
+{
+    const double __symbol_3 = sigma;
+    const double __symbol_15 = 1.000000 / __symbol_3;
+    const double __symbol_1 = tau;
+    const double __symbol_13 = std::pow(__symbol_1, 0.500000);
+    const double __symbol_16 = __symbol_15 / __symbol_13;
+    const double __symbol_9 = s;
+    const double __symbol_10 = std::log(__symbol_9);
+    const double __symbol_6 = r;
+    const double __symbol_4 = std::pow(__symbol_3, 2.000000);
+    const double __symbol_5 = __symbol_4 / 2.000000;
+    const double __symbol_7 = __symbol_6 - __symbol_5;
+    const double __symbol_8 = __symbol_7 * __symbol_1;
+    const double __symbol_11 = __symbol_10 + __symbol_8;
+    const double __symbol_17 = __symbol_16 * __symbol_11;
+    const double __statement_1 = __symbol_17;
+    const double result = __statement_1;
+    const double __adj7 = __symbol_3;
+    const double __adj19 = 2.000000 * __adj7;
+    const double __adj17 = 2.000000 / 4.000000;
+    const double __adj13 = __symbol_1;
+    const double __adj12 = __symbol_16;
+    const double __adj14 = __adj13 * __adj12;
+    const double __adj15 = -1.000000 * __adj14;
+    const double __adj18 = __adj17 * __adj15;
+    const double __adj20 = __adj19 * __adj18;
+    const double __adj8 = std::pow(__adj7, 2.000000);
+    const double __adj10 = -1.000000 / __adj8;
+    const double __adj3 = __symbol_13;
+    const double __adj4 = std::pow(__adj3, 2.000000);
+    const double __adj5 = __adj3 / __adj4;
+    const double __adj1 = __symbol_11;
+    const double __adj6 = __adj5 * __adj1;
+    const double __adj11 = __adj10 * __adj6;
+    const double result_d_sigma = __adj20 + __adj11;
+    const double result_d_r = __adj13 * __adj12;
+    const double __adj30 = __symbol_7;
+    const double __adj31 = __adj30 * __adj12;
+    const double __adj26 = std::pow(__adj13, -0.500000);
+    const double __adj28 = 0.500000 * __adj26;
+    const double __adj21 = __symbol_15;
+    const double __adj22 = -__adj21;
+    const double __adj23 = __adj22 / __adj4;
+    const double __adj24 = __adj23 * __adj1;
+    const double __adj29 = __adj28 * __adj24;
+    const double result_d_tau = __adj31 + __adj29;
+    const double __adj32 = __symbol_9;
+    const double __adj34 = 1.000000 / __adj32;
+    const double result_d_s = __adj34 * __adj12;
+    return std::array<double, 5>{result, result_d_sigma, result_d_r, result_d_tau, result_d_s};
+}
+auto __KoBarrierCallOption(const double x, const double K, const double tau, const double r, const double sigma, const double B)
+{
+    const double __symbol_5 = x;
+    const double __symbol_1 = sigma;
+    const double __symbol_2 = r;
+    const double __symbol_3 = tau;
+    const double __symbol_9 = K;
+    const double __symbol_10 = __symbol_5 / __symbol_9;
+    auto __call_result_12791452 = __FactorPlus(__symbol_1, __symbol_2, __symbol_3, __symbol_10);
+    const double __symbol_23 = __call_result_12791452[0];
+    const double d_12695916___symbol_1 = __call_result_12791452[1];
+    const double d_12695916___symbol_2 = __call_result_12791452[2];
+    const double d_12695916___symbol_3 = __call_result_12791452[3];
+    const double d_12695916___symbol_10 = __call_result_12791452[4];
+    const double __symbol_24 = std::erfc(-(__symbol_23) / std::sqrt(2)) / 2;
+    const double __symbol_4 = B;
+    const double __symbol_6 = __symbol_5 / __symbol_4;
+    auto __call_result_12793732 = __FactorPlus(__symbol_1, __symbol_2, __symbol_3, __symbol_6);
+    const double __symbol_21 = __call_result_12793732[0];
+    const double d_12694836___symbol_1 = __call_result_12793732[1];
+    const double d_12694836___symbol_2 = __call_result_12793732[2];
+    const double d_12694836___symbol_3 = __call_result_12793732[3];
+    const double d_12694836___symbol_6 = __call_result_12793732[4];
+    const double __symbol_22 = std::erfc(-(__symbol_21) / std::sqrt(2)) / 2;
+    const double __symbol_25 = __symbol_24 - __symbol_22;
+    const double __symbol_26 = __symbol_5 * __symbol_25;
+    const double __statement_2 = __symbol_26;
+    const double __symbol_14 = -__symbol_2;
+    const double __symbol_15 = __symbol_14 * __symbol_3;
+    const double __symbol_16 = std::exp(__symbol_15);
+    const double __symbol_17 = -__symbol_16;
+    const double __symbol_18 = __symbol_17 * __symbol_9;
+    auto __call_result_12910844 = __FactorMinus(__symbol_1, __symbol_2, __symbol_3, __symbol_10);
+    const double __symbol_11 = __call_result_12910844[0];
+    const double d_12694956___symbol_1 = __call_result_12910844[1];
+    const double d_12694956___symbol_2 = __call_result_12910844[2];
+    const double d_12694956___symbol_3 = __call_result_12910844[3];
+    const double d_12694956___symbol_10 = __call_result_12910844[4];
+    const double __symbol_12 = std::erfc(-(__symbol_11) / std::sqrt(2)) / 2;
+    auto __call_result_12910364 = __FactorMinus(__symbol_1, __symbol_2, __symbol_3, __symbol_6);
+    const double __symbol_7 = __call_result_12910364[0];
+    const double d_12696036___symbol_1 = __call_result_12910364[1];
+    const double d_12696036___symbol_2 = __call_result_12910364[2];
+    const double d_12696036___symbol_3 = __call_result_12910364[3];
+    const double d_12696036___symbol_6 = __call_result_12910364[4];
+    const double __symbol_8 = std::erfc(-(__symbol_7) / std::sqrt(2)) / 2;
+    const double __symbol_13 = __symbol_12 - __symbol_8;
+    const double __symbol_19 = __symbol_18 * __symbol_13;
+    const double __statement_3 = __symbol_19;
+    const double __symbol_28 = __statement_2 + __statement_3;
+    const double __statement_4 = __symbol_28;
+    const double result = __statement_4;
+    const double __adj55 = __symbol_25;
+    const double __adj51 = __symbol_4;
+    const double __adj52 = std::pow(__adj51, 2.000000);
+    const double __adj53 = __adj51 / __adj52;
+    const double __adj48 = d_12696036___symbol_6;
+    const double __adj41 = __symbol_7;
+    const double __adj42 = std::pow(__adj41, 2.000000);
+    const double __adj43 = 0.500000 * __adj42;
+    const double __adj44 = -__adj43;
+    const double __adj45 = std::exp(__adj44);
+    const double __adj46 = __adj45 / 2.506628;
+    const double __adj14 = __symbol_18;
+    const double __adj40 = -1.000000 * __adj14;
+    const double __adj47 = __adj46 * __adj40;
+    const double __adj49 = __adj48 * __adj47;
+    const double __adj38 = d_12694836___symbol_6;
+    const double __adj31 = __symbol_21;
+    const double __adj32 = std::pow(__adj31, 2.000000);
+    const double __adj33 = 0.500000 * __adj32;
+    const double __adj34 = -__adj33;
+    const double __adj35 = std::exp(__adj34);
+    const double __adj36 = __adj35 / 2.506628;
+    const double __adj1 = __symbol_5;
+    const double __adj30 = -1.000000 * __adj1;
+    const double __adj37 = __adj36 * __adj30;
+    const double __adj39 = __adj38 * __adj37;
+    const double __adj50 = __adj49 + __adj39;
+    const double __adj54 = __adj53 * __adj50;
+    const double __adj56 = __adj55 + __adj54;
+    const double __adj25 = __symbol_9;
+    const double __adj26 = std::pow(__adj25, 2.000000);
+    const double __adj27 = __adj25 / __adj26;
+    const double __adj22 = d_12694956___symbol_10;
+    const double __adj15 = __symbol_11;
+    const double __adj16 = std::pow(__adj15, 2.000000);
+    const double __adj17 = 0.500000 * __adj16;
+    const double __adj18 = -__adj17;
+    const double __adj19 = std::exp(__adj18);
+    const double __adj20 = __adj19 / 2.506628;
+    const double __adj21 = __adj20 * __adj14;
+    const double __adj23 = __adj22 * __adj21;
+    const double __adj12 = d_12695916___symbol_10;
+    const double __adj4 = __symbol_23;
+    const double __adj5 = std::pow(__adj4, 2.000000);
+    const double __adj7 = 0.500000 * __adj5;
+    const double __adj8 = -__adj7;
+    const double __adj9 = std::exp(__adj8);
+    const double __adj10 = __adj9 / 2.506628;
+    const double __adj11 = __adj10 * __adj1;
+    const double __adj13 = __adj12 * __adj11;
+    const double __adj24 = __adj23 + __adj13;
+    const double __adj28 = __adj27 * __adj24;
+    const double result_d_x = __adj56 + __adj28;
+    const double __adj61 = __symbol_17;
+    const double __adj60 = __symbol_13;
+    const double __adj62 = __adj61 * __adj60;
+    const double __adj57 = -__adj1;
+    const double __adj58 = __adj57 / __adj26;
+    const double __adj59 = __adj58 * __adj24;
+    const double result_d_K = __adj62 + __adj59;
+    const double __adj78 = d_12696036___symbol_3;
+    const double __adj79 = __adj78 * __adj47;
+    const double __adj76 = d_12694956___symbol_3;
+    const double __adj77 = __adj76 * __adj21;
+    const double __adj80 = __adj79 + __adj77;
+    const double __adj74 = __symbol_14;
+    const double __adj71 = __symbol_15;
+    const double __adj72 = std::exp(__adj71);
+    const double __adj69 = -1.000000;
+    const double __adj67 = __adj25 * __adj60;
+    const double __adj70 = __adj69 * __adj67;
+    const double __adj73 = __adj72 * __adj70;
+    const double __adj75 = __adj74 * __adj73;
+    const double __adj81 = __adj80 + __adj75;
+    const double __adj65 = d_12694836___symbol_3;
+    const double __adj66 = __adj65 * __adj37;
+    const double __adj82 = __adj81 + __adj66;
+    const double __adj63 = d_12695916___symbol_3;
+    const double __adj64 = __adj63 * __adj11;
+    const double result_d_tau = __adj82 + __adj64;
+    const double __adj92 = d_12696036___symbol_2;
+    const double __adj93 = __adj92 * __adj47;
+    const double __adj90 = d_12694956___symbol_2;
+    const double __adj91 = __adj90 * __adj21;
+    const double __adj94 = __adj93 + __adj91;
+    const double __adj87 = __symbol_3;
+    const double __adj88 = __adj87 * __adj73;
+    const double __adj89 = __adj69 * __adj88;
+    const double __adj95 = __adj94 + __adj89;
+    const double __adj85 = d_12694836___symbol_2;
+    const double __adj86 = __adj85 * __adj37;
+    const double __adj96 = __adj95 + __adj86;
+    const double __adj83 = d_12695916___symbol_2;
+    const double __adj84 = __adj83 * __adj11;
+    const double result_d_r = __adj96 + __adj84;
+    const double __adj103 = d_12696036___symbol_1;
+    const double __adj104 = __adj103 * __adj47;
+    const double __adj101 = d_12694956___symbol_1;
+    const double __adj102 = __adj101 * __adj21;
+    const double __adj105 = __adj104 + __adj102;
+    const double __adj99 = d_12694836___symbol_1;
+    const double __adj100 = __adj99 * __adj37;
+    const double __adj106 = __adj105 + __adj100;
+    const double __adj97 = d_12695916___symbol_1;
+    const double __adj98 = __adj97 * __adj11;
+    const double result_d_sigma = __adj106 + __adj98;
+    const double __adj107 = __adj57 / __adj52;
+    const double result_d_B = __adj107 * __adj50;
+    return std::array<double, 7>{result, result_d_x, result_d_K, result_d_tau, result_d_r, result_d_sigma, result_d_B};
+}
+
+
+int main()
+{
+    PrintCode< KoBarrierOption::FactorPlus>();
+    PrintCode< KoBarrierOption::FactorMinus>();
+    PrintCode< KoBarrierOption::KoBarrierCallOption>();
+
+    using kernel_ty = KoBarrierOption::KoBarrierCallOption;
+
+    /*
+    * Double x, 
+                Double K,
+                Double tau,
+                Double r,
+                Double sigma,
+                Double B
+    */
+    double S = 80;
+    double K = 100;
+    double tau = 1.0;
+    double r = 0.00;
+    double vol = 0.2;
+    double B = 120;
+    std::cout << kernel_ty::Build<double>{}.Evaluate(S, K, tau, r, vol, B) << "\n";
+    auto aad_result = __KoBarrierCallOption(S, K, tau, r, vol, B);
+
+
+
+    std::vector<double> X{ S, K, tau, r, vol, B };
+    std::cout << kernel_ty::Build<double>{}.EvaluateVec(X) << "\n";
+    std::cout << "numeric=" << kernel_ty::Build<double>{}.EvaluateVec(X) << ", AAD=" << aad_result[0] << "\n";
+    for (size_t idx = 0; idx != X.size(); ++idx)
+    {
+        const double epsilon = 1e-8;
+        const double old_value = X[idx];
+        X[idx] = old_value - epsilon / 2;
+        auto left = kernel_ty::Build<double>{}.EvaluateVec(X);
+        X[idx] = old_value + epsilon / 2;
+        auto right = kernel_ty::Build<double>{}.EvaluateVec(X);
+
+        auto numeric = (right - left) / epsilon;
+
+        std::cout << "numeric=" << numeric << ", AAD=" << aad_result[idx + 1] << "\n";
+    }
+}
+#if 0
 int main()
 {
     //test_bs();
     
-    using kernel_ty = BlackScholesCallOptionTest;
+    // using kernel_ty = BlackScholesCallOptionTest;
     //using kernel_ty = MyLogKFDivStd;
 
-#if 1
+    //using kernel_ty = KoBarrierOption::KoBarrierCallOption;
+    using kernel_ty = KoBarrierOption::FactorMinus;
+
+#if 0
     double t = 0.0;
     double T = 2.0;
     double r = 0.00;
     double S = 80;
     double K = 100;
     double vol = 0.2;
-    std::cout << kernel_ty::Build<double>{}.Evaluate(t, T, r, S, K, vol) << "\n";
-    auto aad_result = __black(t, T, r, S, K, vol);
+    double B = 120;
+    std::cout << kernel_ty::Build<double>{}.Evaluate(t, T, r, S, K, vol, B) << "\n";
+    auto aad_result = __black(t, T, r, S, K, vol, );
 
 
 
@@ -1967,7 +2554,7 @@ int main()
     auto three_address_transform = std::make_shared<Transform::RemapUnique>();
     auto three_address_tree = head->Clone(three_address_transform);
 
-    three_address_transform->Debug();
+    //three_address_transform->Debug();
 
     //auto call_expanded_head = ExpandCall(three_address_tree);
     auto call_expanded_head = three_address_tree;
@@ -1990,13 +2577,14 @@ int main()
     auto l = std::make_shared< InstructionLinearizer>();
     M->Accept(*l);
 
-    auto ff = std::make_shared<ProgramCode::Function>("black", arguments, l->stmts_);
-    ff->DebugPrint();
+    auto ff = std::make_shared<ProgramCode::Function>(ad_kernel.Name(), arguments, l->stmts_);
+    //ff->DebugPrint();
 
-    ProgramCode::CodeWriter{}.EmitCode(std::cout, ff);
+    //ProgramCode::CodeWriter{}.EmitCode(std::cout, ff);
 
     auto g = CloneWithDiffs(ff);
 
     ProgramCode::CodeWriter{}.EmitCode(std::cout, g);
 }
+#endif
 
